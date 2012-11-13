@@ -42,12 +42,12 @@ Run the tests:
 
 Tag the product using tags per the SemVer specification; our tags have a v-prefix:
 
-    git tag -a v1.0.0.rc.1 -m "SemVer Version: v1.0.0-rc.1"
+    git tag -a v1.0.0-rc.1 -m "SemVer Version: v1.0.0-rc.1"
 
 If you make a mistake, take it back quickly:
 
-    git tag -d v1.0.0.rc.1
-    git push origin :refs/tags/v1.0.0.rc.1
+    git tag -d v1.0.0-rc.1
+    git push origin :refs/tags/v1.0.0-rc.1
 
 ===PUBLISHING
 
@@ -57,7 +57,7 @@ Here are the commands used to publish:
 
 If you bugger it up, pull it back quickly, or cause grief for users:
 
-    npm unpublish  db-nuodb@1.0.0.RC.1
+    npm unpublish  db-nuodb@1.0.0.rc.1
 
 To view published versions:
 
