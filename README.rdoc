@@ -9,7 +9,7 @@ library into Ruby.
 
 To compile and test run this command:
 
-    rake build
+    rake clean build
 
 == INSTALLING THE GEM
 
@@ -23,12 +23,12 @@ Or from the source tree:
 
 Start up a minimal chorus as follows:
 
-    java -jar nuoagent.jar --broker &
-    ./nuodb --chorus test --password bar --dba-user dba --dba-password baz &
+    java -jar ${NUODB_ROOT}/jar/nuoagent.jar --broker &
+    ${NUODB_ROOT}/bin/nuodb --chorus test --password bar --dba-user dba --dba-password baz &
 
 Create a user in the database:
 
-    ./nuosql test@localhost --user dba --password baz
+    ${NUODB_ROOT}/bin/nuosql test@localhost --user dba --password baz
     > create user cloud password 'user';
     > exit
 
@@ -54,14 +54,6 @@ If you make a mistake, take it back quickly:
 Here are the commands used to publish:
 
     gem push pkg/nuodb-1.0.0.rc.1.gem
-
-If you bugger it up, pull it back quickly, or cause grief for users:
-
-    npm unpublish  db-nuodb@1.0.0.rc.1
-
-To view published versions:
-
-    npm view  db-nuodb
 
 == INSPECTING THE GEM
 
