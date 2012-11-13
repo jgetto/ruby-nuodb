@@ -4,7 +4,7 @@ require File.expand_path('../lib/nuodb/version', __FILE__)
 Gem::Specification.new do |gem|
   gem.name        = 'nuodb'
   gem.version     = NuoDB::VERSION
-  gem.authors     = %w('Robert Buck')
+  gem.authors     = ['Robert Buck']
   gem.email       = %w(support@nuodb.com)
   gem.description = %q{An easy to use database API for the NuoDB distributed database.}
   gem.summary     = %q{Native Ruby driver for NuoDB.}
