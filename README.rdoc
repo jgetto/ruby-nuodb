@@ -1,0 +1,52 @@
+= NuoDB/Ruby Interface
+
+== DESCRIPTION
+
+This is the NuoDB API module for Ruby. It integrates the NuoDB C++
+library into Ruby.
+
+== BUILDING THE GEM
+
+To compile and test run this command:
+
+    rake build
+
+== INSTALLING THE GEM
+
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-0.2.0.gem
+
+Or from the source tree:
+
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-0.2.0.gem
+
+== TESTING THE GEM
+
+Start up a minimal chorus as follows:
+
+    java -jar nuoagent.jar --broker &
+    ./nuodb --chorus test --password bar --dba-user dba --dba-password baz &
+
+Create a user in the database:
+
+    ./nuosql test@localhost --user dba --password baz
+    > create user cloud password 'user';
+    > exit
+
+Run the tests:
+
+    rake test
+
+== INSPECTING THE GEM
+
+It is often useful to inspect the contents of a Gem before distribution.
+To do this you dump the contents of a gem thus:
+
+    gem unpack pkg/nuodb-0.2.0.gem
+
+== INSPECTING THE EXPORTED SYMBOLS
+
+    nm -gU ext/nuodb/nuodb.bundle
+
+== REFERENCES
+
+extensions :: http://java.ociweb.com/mark/NFJS/RubyCExtensions.pdf
