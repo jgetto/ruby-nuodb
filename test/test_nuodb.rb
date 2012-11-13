@@ -28,7 +28,7 @@
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-require "test/unit"
+require 'test/unit'
 require 'ostruct'
 require 'nuodb'
 
@@ -61,7 +61,7 @@ class TC_Nuodb < Test::Unit::TestCase
     stmt = con.createStatement
     assert_not_nil stmt
     have_result = stmt.execute "select 1 from dual"
-    assert_equal false, have_result # TODO should be true
+    assert_equal true, have_result
   end
 
   def test_get_schema()
@@ -108,7 +108,7 @@ EOS
     assert_not_nil stmt
 
     have_result = stmt.execute "select * from test_nuodb"
-    assert_equal false, have_result # TODO should be true
+    assert_equal true, have_result
     assert_equal(-1, stmt.getUpdateCount)
     assert_nil stmt.getGeneratedKeys
     result = stmt.getResultSet
@@ -219,8 +219,7 @@ EOS
     assert_equal 10, r.getInteger(1)
     assert_equal 1.1, r.getDouble(2)
     assert_equal 'one', r.getString(3)
-    # TODO: ResultSet::getBoolean SEGV
-    # assert_equal true, r.getBoolean(4)
+    assert_equal true, r.getBoolean(4)
 
     assert_equal false, r.next
 
@@ -232,8 +231,7 @@ EOS
     assert_equal 20, r.getInteger(1)
     assert_equal 2.2, r.getDouble(2)
     assert_equal 'two', r.getString(3)
-    # TODO: ResultSet::getBoolean SEGV
-    # assert_equal false, r.getBoolean(4)
+    assert_equal false, r.getBoolean(4)
 
     assert_equal false, r.next
 
@@ -245,17 +243,23 @@ EOS
     update.execute
     assert_equal(-1, update.getUpdateCount)
 
-    update.setInteger 2, 10
+    update.setString 1, 'change'
+    update.setInteger 2, 20
     update.execute
     assert_equal 1, update.getUpdateCount
 
-    query.setInteger 1, 10
+    query.setInteger 1, 20
     r = query.executeQuery
     assert_not_nil r
     assert_equal true, r.next
-    assert_equal 10, r.getInteger(1)
-    assert_equal 'change', r.getString(3)
-    assert_equal 1, update.getUpdateCount
+    assert_equal 20, r.getInteger(1)
+    #assert_equal 'change', r.getString(3)
+    assert_equal -1, update.getUpdateCount
+
+    # todo rewrite these tests using rspec and clean up this mess
+    # also, just as i added to the AR side, have the rakefile set
+    # up the database for us, and have tables reset for each test
+    # and close connections.
 
   end
 
