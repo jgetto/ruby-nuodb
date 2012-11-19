@@ -99,7 +99,9 @@ end
 # section below handles this special case so that we can run our test suites.
 
 if nuodb_include.nil? and nuodb_lib64.nil?
-  nuodb_include, nuodb_lib64 = nuodb_srcs? ENV['NUODB_ROOT']
+  unless ENV['NUODB_ROOT'].nil?
+    nuodb_include, nuodb_lib64 = nuodb_srcs? ENV['NUODB_ROOT']
+  end
 end
 
 # Lastly we fall back to detecting the location of installed product against
