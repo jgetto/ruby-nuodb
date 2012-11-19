@@ -154,6 +154,7 @@ class WrapResultSetMetaData
     static void init(VALUE module);
     static VALUE getColumnCount(VALUE self);
     static VALUE getColumnName(VALUE self, VALUE columnValue);
+    static VALUE getColumnLabel(VALUE self, VALUE columnValue);
     static VALUE getScale(VALUE self, VALUE columnValue);
     static VALUE getPrecision(VALUE self, VALUE columnValue);
     static VALUE isNullable(VALUE self, VALUE columnValue);
@@ -496,6 +497,7 @@ void WrapResultSetMetaData::init(VALUE module)
     INIT_TYPE("ResultMetaData");
     DEFINE_METHOD(getColumnCount, 0);
     DEFINE_METHOD(getColumnName, 1);
+    DEFINE_METHOD(getColumnLabel, 1);
     DEFINE_METHOD(getType, 1);
     DEFINE_METHOD(getColumnTypeName, 1);
     DEFINE_METHOD(getScale, 1);
@@ -525,6 +527,19 @@ VALUE WrapResultSetMetaData::getColumnName(VALUE self, VALUE columnValue)
     catch (SQLException & e)
     {
         rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column name from the result set metadata: %s", e.getText());
+    }
+}
+
+VALUE WrapResultSetMetaData::getColumnLabel(VALUE self, VALUE columnValue)
+{
+    int column = NUM2UINT(columnValue);
+    try
+    {
+        return rb_str_new2(asPtr(self)->getColumnLabel(column));
+    }
+    catch (SQLException & e)
+    {
+        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column label from the result set metadata: %s", e.getText());
     }
 }
 
@@ -836,7 +851,7 @@ VALUE WrapPreparedStatement::setDouble(VALUE self, VALUE indexValue, VALUE value
 VALUE WrapPreparedStatement::setString(VALUE self, VALUE indexValue, VALUE valueValue)
 {
     int32_t index = NUM2UINT(indexValue);
-    char const* value = RSTRING_PTR(valueValue);
+    char const* value =  StringValuePtr(valueValue);
     try
     {
         asPtr(self)->setString(index, value);
