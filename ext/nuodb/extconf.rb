@@ -40,6 +40,7 @@ case RUBY_PLATFORM
     $CC = "gcc"
     $CXX = "g++"
     $LIBS << " -lstdc++ -lc"
+    $CFLAGS += " -g"
 end
 
 def dylib_extension
@@ -150,5 +151,13 @@ case RUBY_PLATFORM
     end
   else
 end
+
+add_define 'HAVE_GCC_ATOMIC_BUILTINS' if try_link(<<SRC)
+  unsigned char atomic_var;
+  __sync_lock_test_and_set(&atomic_var, 0);
+  __sync_lock_test_and_set(&atomic_var, 1);
+  __sync_fetch_and_add(&atomic_var, 1);
+  __sync_fetch_and_sub(&atomic_var, 1);
+SRC
 
 create_makefile('nuodb/nuodb')

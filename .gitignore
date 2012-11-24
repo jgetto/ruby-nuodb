@@ -3,6 +3,9 @@
 *.o
 *.so
 ext/nuodb/Makefile
-pkg
+coverage/
+doc/
+rdoc/
+pkg/
 tmp
 .idea

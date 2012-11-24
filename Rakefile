@@ -33,6 +33,16 @@ require 'rake/testtask'
 require 'rdoc/task'
 require 'date'
 
+require 'bundler'
+require 'bundler/gem_tasks'
+
+require File.expand_path(File.dirname(__FILE__)) + "/spec/support/config"
+require File.expand_path(File.dirname(__FILE__)) + "/tasks/rspec"
+
+Bundler::GemHelper.install_tasks
+
+load 'nuodb.gemspec'
+
 #############################################################################
 #
 # Helper functions
@@ -93,20 +103,16 @@ end
 #
 #############################################################################
 
+CLEAN.include('doc/ri')
+CLEAN.include('doc/site')
 CLEAN.include('pkg')
 CLEAN.include('ext/**/*{.o,.log,.so,.bundle}')
 CLEAN.include('ext/**/Makefile')
 CLEAN.include('lib/**/*{.so,.bundle}')
 
-require 'rdoc/task'
-Rake::RDocTask.new do |rdoc|
-  rdoc.rdoc_dir = 'rdoc'
-  rdoc.title = "#{name} #{version}"
-  rdoc.rdoc_files.include('README*')
-  rdoc.rdoc_files.include('lib/**/*.rb')
-end
+Dir['tasks/**/*.rb'].each { |file| load file }
 
-file "lib/#{name}/#{name}.#{so_ext}" => Dir.glob("ext/#{name}/*{.rb,.c}") do
+file "lib/#{name}/#{name}.#{so_ext}" => Dir.glob("ext/#{name}/*{.rb,.cpp}") do
   Dir.chdir("ext/#{name}") do
     # this does essentially the same thing
     # as what RubyGems does
@@ -116,13 +122,27 @@ file "lib/#{name}/#{name}.#{so_ext}" => Dir.glob("ext/#{name}/*{.rb,.c}") do
   cp "ext/#{name}/#{name}.#{so_ext}", "lib/#{name}"
 end
 
-task :test => "lib/#{name}/#{name}.#{so_ext}"
+namespace :nuodb do
+  task :create_user do
+    #puts %x( echo "create user arunit password 'arunit';" | nuosql arunit@localhost --user dba --password baz )
+  end
 
-Rake::TestTask.new do |t|
-  t.libs << 'test'
+  task :start_server do
+    #config = KeymapTest.config['connections']['redis']
+    #puts %x( echo "daemonize yes\nport #{config['test']['port']}\ndir #{File.dirname(__FILE__)}" | redis-server - )
+  end
+
+  task :stop_server do
+    #config = KeymapTest.config['connections']['redis']
+    #puts %x( redis-cli -p #{config['test']['port']} shutdown )
+  end
+
+  task :restart_server => [:stop_server, :start_server, :create_user]
 end
 
-task :default => :test
+task :spec => "lib/#{name}/#{name}.#{so_ext}"
+
+task :default => :spec
 
 #############################################################################
 #
@@ -138,9 +158,22 @@ task :build do
 end
 
 task :install => :build do
-  sh %{gem install pkg/#{name}-#{version} --no-rdoc --no-ri}
+  sh %{gem install pkg/#{name}-#{version}}
 end
 
 task :uninstall do
   sh %{gem uninstall #{name} -x -v #{version}}
 end
+
+desc "Tags git with the latest gem version"
+task :tag do
+  sh %{git tag v#{version}}
+end
+
+desc "Push gem packages"
+task :push => :build do
+  sh "gem push pkg/#{name}*.gem"
+end
+
+desc "Release version #{version}"
+task :release => [:tag, :push]

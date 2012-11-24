@@ -2,22 +2,22 @@
 
 == DESCRIPTION
 
-This is the NuoDB API module for Ruby. It integrates the NuoDB C++
-library into Ruby.
+This is the official Ruby Gem for NuoDB. It is written as a Ruby extension that
+wraps the NuoDB C++ API, providing a natural API for Ruby developers.
 
 == BUILDING THE GEM
 
 To compile and test run this command:
 
-    rake clean build
+    rake clean build rdoc spec
 
 == INSTALLING THE GEM
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-1.0.0-rc.1.gem
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-1.0.0-rc.2.gem
 
 Or from the source tree:
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-1.0.0-rc.1.gem
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-1.0.0-rc.2.gem
 
 == TESTING THE GEM
 
@@ -34,7 +34,7 @@ Create a user in the database:
 
 Run the tests:
 
-    rake test
+    rake spec
 
 == PUBLISHING THE GEM
 
@@ -42,28 +42,34 @@ Run the tests:
 
 Tag the product using tags per the SemVer specification; our tags have a v-prefix:
 
-    git tag -a v1.0.0-rc.1 -m "SemVer Version: v1.0.0-rc.1"
+    git tag -a v1.0.0-rc.2 -m "SemVer Version: v1.0.0-rc.2"
 
 If you make a mistake, take it back quickly:
 
-    git tag -d v1.0.0-rc.1
-    git push origin :refs/tags/v1.0.0-rc.1
+    git tag -d v1.0.0-rc.2
+    git push origin :refs/tags/v1.0.0-rc.2
 
 ===PUBLISHING
 
 Here are the commands used to publish:
 
-    gem push pkg/nuodb-1.0.0.rc.1.gem
+    gem push pkg/nuodb-1.0.0.rc.2.gem
 
 == INSPECTING THE GEM
 
 It is often useful to inspect the contents of a Gem before distribution.
 To do this you dump the contents of a gem thus:
 
-    gem unpack pkg/nuodb-1.0.0.rc.1.gem
+    gem unpack pkg/nuodb-1.0.0.rc.2.gem
 
 == INSPECTING THE EXPORTED SYMBOLS
 
+To inspec the symbols on Linux:
+
     nm -gU ext/nuodb/nuodb.bundle
+
+To inspec the symbols on Mac:
+
+    otool -l ext/nuodb/nuodb.bundle
 
 == REFERENCES

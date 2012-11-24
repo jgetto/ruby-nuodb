@@ -31,79 +31,35 @@
  */
 
 #include <ruby.h>
+#include "atomic.h"
+#include <assert.h>
 #include <time.h>
 #include <stdio.h>
+#include <typeinfo>
+
+#define HAVE_CXA_DEMANGLE
+
+#ifdef HAVE_CXA_DEMANGLE
+#include <cxxabi.h>
+const char * demangle(const char * name)
+{
+    char buf[1024];
+    size_t size = 1024;
+    int status;
+    char * res = abi::__cxa_demangle (name,
+        buf, &size, &status);
+    return res;
+}
+#else
+const char* demangle(const char* name)
+{
+  return name;
+}
+#endif
 
 extern "C" struct timeval rb_time_timeval(VALUE time);
 
-//------------------------------------------------------------------------------
-// class building macros
-
-#define WRAPPER_COMMON(WT, RT)                                          \
-    private:                                                            \
-    static VALUE type;                                                  \
-    RT* ptr;                                                            \
-public:                                                                 \
-    WT(RT* arg): ptr(arg) {}                                            \
-    static VALUE getRubyType() { return type; }                         \
-    static void release(WT* self)                                       \
-{                                                                       \
-    /*delete self->ptr;*/                                               \
-    delete self;                                                        \
-}                                                                       \
-    static RT* asPtr(VALUE value)                                       \
-{                                                                       \
-    Check_Type(value, T_DATA);                                          \
-    return ((WT*)DATA_PTR(value))->ptr;                                 \
-}                                                                       \
-    static VALUE wrap(RT* value)                                        \
-{                                                                       \
-    if (value == NULL) return Qnil;                                     \
-    WT* w = new WT(value);                                              \
-    VALUE obj = Data_Wrap_Struct(WT::getRubyType(), 0, WT::release, w); \
-    rb_obj_call_init(obj, 0, 0);                                        \
-    return obj;                                                         \
-}
-
-#define WRAPPER_DEFINITION(WT)                                          \
-    VALUE WT::type = 0;
-
 #define AS_QBOOL(value)((value)? Qtrue : Qfalse)
-
-//------------------------------------------------------------------------------
-// utility function macros
-
-#define SYMBOL_OF(value)                                                \
-    ID2SYM(rb_intern(#value))
-
-#define INIT_TYPE(name)                                                 \
-    type = rb_define_class_under(module, name, rb_cObject)
-
-#define DEFINE_SINGLE(func, count)                                      \
-    rb_define_singleton_method(type, #func, RUBY_METHOD_FUNC(func), count)
-
-#define DEFINE_METHOD(func, count)                                      \
-    rb_define_method(type, #func, RUBY_METHOD_FUNC(func), count)
-
-//------------------------------------------------------------------------------
-// exception mapper
-
-static VALUE m_nuodb, c_nuodb_error;
-static ID c_error_code_assignment;
-
-static void rb_raise_nuodb_error(int code, const char * fmt, ...)
-{
-    va_list args;
-    char text[BUFSIZ];
-
-    va_start(args, fmt);
-    vsnprintf(text, BUFSIZ, fmt, args);
-    va_end(args);
-
-    VALUE error = rb_exc_new2(c_nuodb_error, text);
-    rb_funcall(error, c_error_code_assignment, 1, UINT2NUM(code));
-    rb_exc_raise(error);
-}
 
 //------------------------------------------------------------------------------
 
@@ -130,1016 +86,2397 @@ static void rb_raise_nuodb_error(int code, const char * fmt, ...)
 #include "SqlDate.h"
 #include "SqlTime.h"
 
+// ----------------------------------------------------------------------------
+// M O D U L E S
+
+static VALUE m_nuodb;
+
+// ----------------------------------------------------------------------------
+// C O N S T A N T S
+
+static VALUE c_nuodb_error;
+
+// ----------------------------------------------------------------------------
+// C L A S S E S
+
+static VALUE nuodb_connection_klass;
+static VALUE nuodb_statement_klass;
+static VALUE nuodb_prepared_statement_klass;
+static VALUE nuodb_result_klass;
+
+// ----------------------------------------------------------------------------
+// S Y M B O L S
+
+static VALUE sym_database, sym_username, sym_password, sym_schema;
+
+// ----------------------------------------------------------------------------
+// B E H A V I O R S
+
+static const bool ENABLE_CLOSE_HOOK = true;
+
+// ----------------------------------------------------------------------------
+// L O G G I N G   A N D   T R A C I N G
+
+#define ENABLE_LOGGING
+
+enum LogLevel
+{
+    ERROR,
+    WARN,
+    INFO,
+    TRACE,
+    DEBUG,
+    NONE,
+};
+
+static LogLevel logLevel = NONE;
+
+static char const * log_level_name(LogLevel level)
+{
+    char const * level_name = NULL;
+    switch(level)
+    {
+    case NONE:
+        level_name = "NONE";
+        break;
+    case ERROR:
+        level_name = "ERROR";
+        break;
+    case WARN:
+        level_name = "WARN";
+        break;
+    case INFO:
+        level_name = "INFO";
+        break;
+    case DEBUG:
+        level_name = "DEBUG";
+        break;
+    case TRACE:
+        level_name = "TRACE";
+        break;
+    }
+    return level_name;
+}
+
+static void log(LogLevel level, char const * message)
+{
+    if (level >= logLevel)
+    {
+        printf("[%s] %s\n", log_level_name(level), message);
+    }
+}
+
+static void trace(char const * message)
+{
+    log(TRACE, message);
+}
+
+static void print_address(char const * context, void * address)
+{
+    if (DEBUG >= logLevel)
+    {
+        printf("%s: %016" PRIxPTR "\n", context, (uintptr_t) address);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// NEXT GEN GC INTEGRATION SERVICES
+
+#ifdef ENABLE_NEXTGEN_GC_INTEGRATION
+
+/*
+ * GC Notes:
+ *
+ * 1. gc_entities are placed in the Ruby object table and are freed via mark
+ *    and sweep.
+ * 2. gc_entities may be freed in any order.
+ * 3. gc_entities may be freed either before shutdown or during shutdown.
+ * 4. gc_entities may no longer be accessed once freed by the garbage
+ *    collector; once gc_entities are freed they no longer appear in the
+ *    object table. As such, calls to Data_Get_Struct on previously garbage
+ *    collected entities will cause the Ruby VM to crash; viz. SIGABRT via
+ *    EXC_BAD_ACCESS.
+ *
+ *    a. So a general observation of this is thusly: if e.g. with graphs of
+ *       child to parent relationships an orderly de-allocation is required,
+ *       as parents (gc_entities) may be freed prior to childrens (gc_entities)
+ *       it becomes imperative that the logic between freeing gc_entity objects
+ *       be kept completely and distinctly apart from the logic of the managed
+ *       entities themselves.
+ */
+
+typedef void (*callback)(void *);
+
+/*
+ * Application Rules:
+ *
+ * 1. Assign a callback for the increment and decrement refers counter so that
+ *    context specific logging and tracking may be implemented.
+ * 2. Direct access to refers should never occur.
+ * 3. The freed bit indicates that the resources associated to the data_handle
+ *    has been freed, and NOT that the os_entity struct has been freed.
+ *
+ * Logic:
+ *
+ * 1. The incr_func is called on a child when it is first created.
+ * 2. The incr_func is called on a parent when its child is first created.
+ * 3. When incr_func is called, ATOMIC_INC increments the refers field.
+ * 4. When decr_func is called, ATOMIC_DEC decrements the refers field.
+ * 5. When the refers field reaches zero (inside decr_func):
+ *    5.1. ATOMIC-CAS the freed bit, if the prior freed bit is not set:
+ *       5.1.1. ATOMIC-OR all parents freed bits and if the result does not have
+ *          the freed bit set:
+ *          5.1.1.1. Call the free function, passing the os_entity itself as a parameter.
+ *            The free function releases any resources related to the data
+ *            handle itself and sets the handle to null.
+ *    5.2. Call the decr_func on its parent (this may act recursively).
+ *    5.3. Call xfree on the os_entity structure itself.
+ * 6. When a user calls finish on an object:
+ *    6.1. ATOMIC-CAS the freed bit, if the prior freed bit is not set
+ *         perform operations 5.1.1 through 5.1.1.1.
+ *
+ * Details:
+ *
+ * 1. Regarding 5a, above, we neither want to doubly release an object, nor
+ *    call free_function when a parent has already released all the resources.
+ *    This optionally is configurable, for cases when parents forcibly close
+ *    child resources, or for cases where they don't. This is a behavioral
+ *    configuration parameter to the resource manager. But the above documentation
+ *    is tailored for cases where parents automatically release child resources
+ *    when they themselves are closed.
+ * 2. A race condition may occur between 5.1 and 5.2, above, where a parent
+ *    resource is released just after 5.1.1.1 and before 5.2; the result will
+ *    be a SEGV. This may prompt the use of a global lock for the reference
+ *    manager.
+ *
+ * Interface:
+ *
+ * 1. Structures as defined below.
+ * 2. Function to release a reference:
+ *      void rc_decr_refs (void * handle, int * err_code)
+ * 3. Function to acquire a reference:
+ *      void rc_incr_refs (void * handle, int * err_code)
+ * 4. Function to wrap an entity:
+ *      void * rc_add_object (void * object, int * err_code)
+ * 5. Function to get wrapped pointer:
+ *      void * rc_get_object (void * handle, int * err_code)
+ *
+ * Questions:
+ *
+ * 1. Do we go opaque so that the data type definition is malleable? We don't
+ *    want this any more type specific than it is.
+ */
+struct os_entity
+{
+    void * data_handle;
+    unsigned int flags;
+    rb_atomic_t refers;
+
+    callback incr_func;
+    callback decr_func;
+    callback free_func;
+
+    os_entity * parent;
+};
+
+/*
+ * Rules:
+ *
+ * 1. When mark is called, traverse marks list till a null is reached, for
+ *    each value call rb_gc_mark.
+ * 2. When the garbage collector frees an object, the decr_function is called
+ *    on the entity passing the entity as its parameter.
+ */
+struct gc_entity
+{
+    os_entity * entity;
+    VALUE ** mark_refs;
+};
+
+/*
+ * A strict release strategy only permits free calls after the reference count
+ * drops to zero. A lenient release strategy permits free calls at any time,
+ * yet the entity itself is not freed until its reference count drops to zero.
+ */
+typedef enum {strict, lenient} free_strategy;
+
+#endif /* ENABLE_NEXTGEN_GC_INTEGRATION */
+
+// ----------------------------------------------------------------------------
+// H A N D L E S
+
+struct nuodb_handle
+{
+    RUBY_DATA_FUNC free_func;
+    rb_atomic_t atomic;
+    nuodb_handle * parent_handle;
+    VALUE parent;
+};
+
+struct nuodb_connection_handle : nuodb_handle
+{
+    VALUE database;
+    VALUE username;
+    VALUE password;
+    VALUE schema;
+
+    NuoDB::Connection * pointer;
+};
+
+struct nuodb_prepared_statement_handle : nuodb_handle
+{
+    NuoDB::PreparedStatement * pointer;
+};
+
+struct nuodb_statement_handle : nuodb_handle
+{
+    NuoDB::Statement * pointer;
+};
+
+struct nuodb_result_handle : nuodb_handle
+{
+    NuoDB::ResultSet * pointer;
+    NuoDB::Connection * connection;
+};
+
+template<typename handle_type>
+handle_type * cast_handle(VALUE value)
+{
+    Check_Type(value, T_DATA);
+    return static_cast<handle_type*>(DATA_PTR(value));
+}
+
+template<typename handle_type, typename return_type>
+return_type * cast_pointer_member(VALUE value)
+{
+    Check_Type(value, T_DATA);
+    return cast_handle<handle_type>(value)->pointer;
+}
+
+static void track_ref_count(char const * context, nuodb_handle * handle)
+{
+    trace("track_ref_count");
+
+    if (handle != 0)
+    {
+        nuodb_handle * parent = handle->parent_handle;
+        int parent_count = -10;
+        if (handle->parent_handle != 0)
+        {
+            parent_count = handle->parent_handle->atomic;
+        }
+        if (logLevel <= DEBUG)
+        {
+            printf("[REFERENCE COUNT][%s] (%s @ %016" PRIxPTR "): %d (%s @ %016" PRIxPTR "): %d\n",
+                context, demangle(typeid(*handle).name()), (uintptr_t) handle,
+                    handle->atomic, demangle(typeid(*parent).name()), (uintptr_t) parent, parent_count);
+        }
+    }
+}
+
+void incr_reference_count(nuodb_handle * handle)
+{
+    trace("incr_reference_count");
+
+    track_ref_count("I INCR", handle);
+
+    ATOMIC_INC(handle->atomic);
+    if (handle->parent_handle != 0)
+    {
+        log(DEBUG, "incrementing parent");
+        ATOMIC_INC(handle->parent_handle->atomic);
+    }
+
+    track_ref_count("O INCR", handle);
+}
+
+void decr_reference_count(nuodb_handle * handle)
+{
+    trace("decr_reference_count");
+
+    track_ref_count("I DECR", handle);
+
+    if (handle->atomic == 0)
+    {
+        return;
+    }
+
+    if (ATOMIC_DEC(handle->atomic) == 0)
+    {
+        (*(handle->free_func))(handle);
+        if (handle->parent_handle != 0)
+        {
+            log(DEBUG, "decrementing parent");
+            decr_reference_count(handle->parent_handle);
+            handle->parent = Qnil;
+            handle->parent_handle = 0;
+            assert(NIL_P(handle->parent));
+        }
+        track_ref_count("O DECR", handle);
+
+        print_address("[DELETING HANDLE]", handle);
+        xfree(handle);
+        handle = NULL;
+    }
+    else
+    {
+        track_ref_count("O DECR", handle);
+    }
+}
+
+//------------------------------------------------------------------------------
+// exception mapper
+
+static ID c_error_code_assignment;
+
+static void rb_raise_nuodb_error(int code, const char * fmt, ...)
+{
+    va_list args;
+    char text[BUFSIZ];
+
+    va_start(args, fmt);
+    vsnprintf(text, BUFSIZ, fmt, args);
+    va_end(args);
+
+    VALUE error = rb_exc_new2(c_nuodb_error, text);
+    rb_funcall(error, c_error_code_assignment, 1, UINT2NUM(code));
+    rb_exc_raise(error);
+}
+
+//------------------------------------------------------------------------------
+
 using namespace NuoDB;
 
-class WrapDatabaseMetaData
-{
-    WRAPPER_COMMON(WrapDatabaseMetaData, DatabaseMetaData)
-
-    static void init(VALUE module);
-    static VALUE getDatabaseVersion(VALUE self);
-    static VALUE getIndexInfo(VALUE self, VALUE schemaValue, VALUE tableValue, VALUE uniqueValue, VALUE approxValue);
-    static VALUE getColumns(VALUE self, VALUE schemaValue, VALUE tablePattern);
-    static VALUE getTables(VALUE self, VALUE schemaValue, VALUE table);
-};
-
-WRAPPER_DEFINITION(WrapDatabaseMetaData);
-
 //------------------------------------------------------------------------------
 
-class WrapResultSetMetaData
+static
+VALUE nuodb_result_free_protect(VALUE value)
 {
-    WRAPPER_COMMON(WrapResultSetMetaData, ResultSetMetaData);
-
-    static void init(VALUE module);
-    static VALUE getColumnCount(VALUE self);
-    static VALUE getColumnName(VALUE self, VALUE columnValue);
-    static VALUE getColumnLabel(VALUE self, VALUE columnValue);
-    static VALUE getScale(VALUE self, VALUE columnValue);
-    static VALUE getPrecision(VALUE self, VALUE columnValue);
-    static VALUE isNullable(VALUE self, VALUE columnValue);
-    static VALUE getColumnTypeName(VALUE self, VALUE columnValue);
-    static VALUE getType(VALUE self, VALUE columnValue);
-};
-
-WRAPPER_DEFINITION(WrapResultSetMetaData);
-
-//------------------------------------------------------------------------------
-
-class WrapResultSet
-{
-    WRAPPER_COMMON(WrapResultSet, ResultSet)
-
-    static void init(VALUE module);
-    static VALUE next(VALUE self);
-    static VALUE getColumnCount(VALUE self);
-    static VALUE getMetaData(VALUE self);
-    static VALUE getBoolean(VALUE self, VALUE columnValue);
-    static VALUE getInteger(VALUE self, VALUE columnValue);
-    static VALUE getDouble(VALUE self, VALUE columnValue);
-    static VALUE getString(VALUE self, VALUE columnValue);
-    static VALUE getDate(VALUE self, VALUE columnValue);
-    static VALUE getTime(VALUE self, VALUE columnValue);
-    static VALUE getTimestamp(VALUE self, VALUE columnValue);
-    static VALUE getChar(VALUE self, VALUE columnValue);
-};
-
-WRAPPER_DEFINITION(WrapResultSet)
-
-//------------------------------------------------------------------------------
-
-class WrapStatement
-{
-    WRAPPER_COMMON(WrapStatement, Statement);
-
-    static void init(VALUE module);
-    static VALUE close(VALUE self);
-    static VALUE execute(VALUE self, VALUE sqlValue);
-    static VALUE executeQuery(VALUE self, VALUE sqlValue);
-    static VALUE executeUpdate(VALUE self, VALUE sqlValue);
-    static VALUE getResultSet(VALUE self);
-    static VALUE getUpdateCount(VALUE self);
-    static VALUE getGeneratedKeys(VALUE self);
-};
-
-WRAPPER_DEFINITION(WrapStatement);
-
-//------------------------------------------------------------------------------
-
-class WrapPreparedStatement
-{
-    WRAPPER_COMMON(WrapPreparedStatement, PreparedStatement);
-
-    static void init(VALUE module);
-    static VALUE close(VALUE self);
-    static VALUE setBoolean(VALUE self, VALUE indexValue, VALUE valueValue);
-    static VALUE setInteger(VALUE self, VALUE indexValue, VALUE valueValue);
-    static VALUE setDouble(VALUE self, VALUE indexValue, VALUE valueValue);
-    static VALUE setString(VALUE self, VALUE indexValue, VALUE valueValue);
-    static VALUE setTime(VALUE self, VALUE indexValue, VALUE valueValue);
-    static VALUE execute(VALUE self);
-    static VALUE executeQuery(VALUE self);
-    static VALUE executeUpdate(VALUE self);
-    static VALUE getResultSet(VALUE self);
-    static VALUE getUpdateCount(VALUE self);
-    static VALUE getGeneratedKeys(VALUE self);
-};
-
-WRAPPER_DEFINITION(WrapPreparedStatement);
-
-//------------------------------------------------------------------------------
-
-class WrapConnection
-{
-    WRAPPER_COMMON(WrapConnection, Connection);
-
-    static void init(VALUE module);
-    static VALUE close(VALUE self);
-    static VALUE ping(VALUE self);
-    static VALUE createStatement(VALUE self);
-    static VALUE createPreparedStatement(VALUE self, VALUE sqlValue);
-    static VALUE setAutoCommit(VALUE self, VALUE autoCommitValue);
-    static VALUE hasAutoCommit(VALUE self);
-    static VALUE commit(VALUE self);
-    static VALUE rollback(VALUE self);
-    static VALUE getMetaData(VALUE self);
-    static VALUE getSchema(VALUE self);
-    static VALUE createSqlConnection(VALUE self,
-        VALUE databaseValue,
-        VALUE schemaValue,
-        VALUE usernameValue,
-        VALUE passwordValue);
-};
-
-WRAPPER_DEFINITION(WrapConnection);
-
-//------------------------------------------------------------------------------
-
-void WrapDatabaseMetaData::init(VALUE module)
-{
-    INIT_TYPE("DatabaseMetaData");
-    DEFINE_METHOD(getDatabaseVersion, 0);
-    DEFINE_METHOD(getIndexInfo, 4);
-    DEFINE_METHOD(getColumns, 2);
-    DEFINE_METHOD(getTables, 2);
+    trace("nuodb_result_free_protect");
+    nuodb_result_handle * handle = reinterpret_cast<nuodb_result_handle *>(value);
+    if (handle != NULL)
+    {
+        if (handle->pointer != NULL)
+        {
+            try
+            {
+                track_ref_count("CLOSE RESULT", handle);
+                log(INFO, "closing result");
+                handle->pointer->close();
+                handle->pointer = NULL;
+            }
+            catch (SQLException & e)
+            {
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close result: %s", e.getText());
+            }
+        }
+    }
+    return Qnil;
 }
 
-VALUE WrapDatabaseMetaData::getDatabaseVersion(VALUE self)
+static
+void nuodb_result_free(void * ptr)
 {
-    try
+    trace("nuodb_result_free");
+    if (ptr != NULL)
     {
-        return rb_str_new2(asPtr(self)->getDatabaseProductVersion());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Get database metadata database version failed: %s", e.getText());
+        int exception = 0;
+        rb_protect(nuodb_result_free_protect, reinterpret_cast<VALUE>(ptr), &exception);
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
     }
 }
 
-VALUE WrapDatabaseMetaData::getIndexInfo(VALUE self, VALUE schemaValue, VALUE tableValue, VALUE uniqueValue, VALUE approxValue)
+static
+void nuodb_result_mark(void * ptr)
 {
-    const char* schema = StringValuePtr(schemaValue);
-    const char* table = StringValuePtr(tableValue);
-    bool unique = !(RB_TYPE_P(uniqueValue, T_FALSE) || RB_TYPE_P(uniqueValue, T_NIL));
-    bool approx = !(RB_TYPE_P(approxValue, T_FALSE) || RB_TYPE_P(approxValue, T_NIL));
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getIndexInfo(NULL, schema, table, unique, approx));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Get database metadata index info failed: %s", e.getText());
-    }
+    trace("nuodb_result_mark");
+    nuodb_result_handle * handle = static_cast<nuodb_result_handle *>(ptr);
+    rb_gc_mark(handle->parent);
 }
 
-VALUE WrapDatabaseMetaData::getColumns(VALUE self, VALUE schemaValue, VALUE tableValue)
+static
+void nuodb_result_decr_reference_count(nuodb_handle * handle)
 {
-    const char* schema = StringValuePtr(schemaValue);
-    const char* table = StringValuePtr(tableValue);
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getColumns(NULL, schema, table, NULL));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Get columns failed: %s", e.getText());
-    }
+    trace("nuodb_result_decr_reference_count");
+    decr_reference_count(handle);
 }
 
-VALUE WrapDatabaseMetaData::getTables(VALUE self, VALUE schemaValue, VALUE tableValue)
+/*
+ * call-seq:
+ *  finish()
+ *
+ * Releases the result set and any associated resources.
+ */
+static
+VALUE nuodb_result_finish(VALUE self)
 {
-    const char* schema = StringValuePtr(schemaValue);
-    const char* table = StringValuePtr(tableValue);
-
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getTables(NULL, schema, table, 0, NULL));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Get tables failed: %s", e.getText());
-    }
+    trace("nuodb_result_free_protect");
+    nuodb_result_handle * handle = cast_handle<nuodb_result_handle>(self);//reinterpret_cast<nuodb_result_handle *>(value);
+    nuodb_result_free(handle);
+//    if (handle != NULL)
+//    {
+//        if (handle->pointer != NULL)
+//        {
+//            try
+//            {
+//                //handle->pointer->close();
+//                //handle->pointer = NULL;
+//            }
+//            catch (SQLException & e)
+//            {
+//                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close result: %s", e.getText());
+//            }
+//        }
+//    }
+    return Qnil;
+//
+//
+//
+//    trace("nuodb_result_finish");
+//    if (ENABLE_CLOSE_HOOK)
+//    {
+//        //nuodb_result_decr_reference_count(cast_handle<nuodb_result_handle>(self));
+//    }
+//    nuodb_result_handle * handle = ;
+//    if (handle != NULL && handle->pointer != NULL)
+//    {
+//        if (ATOMIC_DEC(handle->atomic) == 0)
+//        {
+//            try
+//            {
+//                //handle->pointer->close();
+//                //handle->pointer = NULL;
+//            }
+//            catch (SQLException & e)
+//            {
+//                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close result set: %s", e.getText());
+//            }
+//        }
+//    }
+//    return Qnil;
 }
 
-//------------------------------------------------------------------------------
-
-void WrapResultSet::init(VALUE module)
+static
+VALUE nuodb_map_sql_type(int type)
 {
-    INIT_TYPE("ResultSet");
-    DEFINE_METHOD(next, 0);
-    DEFINE_METHOD(getMetaData, 0);
-    DEFINE_METHOD(getBoolean, 1);
-    DEFINE_METHOD(getInteger, 1);
-    DEFINE_METHOD(getDouble, 1);
-    DEFINE_METHOD(getString, 1);
-    DEFINE_METHOD(getDate, 1);
-    DEFINE_METHOD(getTime, 1);
-    DEFINE_METHOD(getTimestamp, 1);
-    DEFINE_METHOD(getChar, 1);
-}
-
-VALUE WrapResultSet::next(VALUE self)
-{
-    try
+    VALUE symbol = Qnil;
+    switch(type)
     {
-        return AS_QBOOL(asPtr(self)->next());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to move the cursor forward one row: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSet::getMetaData(VALUE self)
-{
-    try
-    {
-        return WrapResultSetMetaData::wrap(asPtr(self)->getMetaData());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to retrieve number, types, and properties of the result set: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSet::getBoolean(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        bool value = asPtr(self)->getBoolean(column);
-        return AS_QBOOL(value);
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get boolean value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getInteger(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return INT2NUM(asPtr(self)->getInt(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get integer value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getDouble(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_float_new(asPtr(self)->getDouble(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get double value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getString(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getString(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get string value for the designated column (%d): %s", column, e.getText());
-    }
-}
-VALUE WrapResultSet::getDate(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getString(column));
-        //Date* date = asPtr(self)->getDate(column);
-        //SqlDate timestamp(date->getMilliseconds());
-        //struct tm utc;
-        //timestamp.getDate(&utc);
-        //char buffer[250];
-        //::strftime(buffer,sizeof(buffer),"%Y%m%dT%I%M%S+0000",&utc);
-        //return rb_str_new2(buffer);
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get date value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getTime(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getString(column));
-        //Time* time = asPtr(self)->getTime(column);
-        //SqlTime timestamp(time->getMilliseconds());
-        //struct tm utc;
-        //timestamp.getTime(&utc);
-        //char buffer[250];
-        //::strftime(buffer,sizeof(buffer),"%Y%m%dT%I%M%S+0000",&utc);
-        // Workaround until we fix the Date/Time support
-        // Convert time to local time?
-        //snprintf(buffer, sizeof(buffer), "%u:%u:%u", utc.tm_hour, utc.tm_min, utc.tm_sec);
-        //return rb_str_new2(buffer);
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get time value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getTimestamp(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getString(column));
-        //Timestamp* ts = asPtr(self)->getTimestamp(column);
-        //SqlTimestamp timestamp(ts->getMilliseconds());
-        //struct tm utc;
-        //timestamp.getTimestamp(&utc);
-        //char buffer[250];
-        //::strftime(buffer,sizeof(buffer),"%Y%m%dT%I%M%S+0000",&utc);
-        //return rb_str_new2(buffer);
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get timestamp value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSet::getChar(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getString(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get char value for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-//------------------------------------------------------------------------------
-
-void WrapResultSetMetaData::init(VALUE module)
-{
-    INIT_TYPE("ResultMetaData");
-    DEFINE_METHOD(getColumnCount, 0);
-    DEFINE_METHOD(getColumnName, 1);
-    DEFINE_METHOD(getColumnLabel, 1);
-    DEFINE_METHOD(getType, 1);
-    DEFINE_METHOD(getColumnTypeName, 1);
-    DEFINE_METHOD(getScale, 1);
-    DEFINE_METHOD(getPrecision, 1);
-    DEFINE_METHOD(isNullable, 1);
-}
-
-VALUE WrapResultSetMetaData::getColumnCount(VALUE self)
-{
-    try
-    {
-        return UINT2NUM(asPtr(self)->getColumnCount());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column count from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getColumnName(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getColumnName(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column name from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getColumnLabel(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getColumnLabel(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column label from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getScale(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return UINT2NUM(asPtr(self)->getScale(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get scale from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getPrecision(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return UINT2NUM(asPtr(self)->getPrecision(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get precision from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::isNullable(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return AS_QBOOL(asPtr(self)->isNullable(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to determine nullability from the result set metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getColumnTypeName(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    try
-    {
-        return rb_str_new2(asPtr(self)->getColumnTypeName(column));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get column type name from the result set metadata for the designated column (%d): %s", column, e.getText());
-    }
-}
-
-VALUE WrapResultSetMetaData::getType(VALUE self, VALUE columnValue)
-{
-    int column = NUM2UINT(columnValue);
-    SqlType t = (SqlType)asPtr(self)->getColumnType(column);
-
-    switch(t)
-    {
-    case NUOSQL_NULL:
-        return SYMBOL_OF(SQL_NULL);
-    case NUOSQL_BIT:
-        return SYMBOL_OF(SQL_BIT);
     case NUOSQL_TINYINT:
-        return SYMBOL_OF(SQL_TINYINT);
     case NUOSQL_SMALLINT:
-        return SYMBOL_OF(SQL_SMALLINT);
     case NUOSQL_INTEGER:
-        return SYMBOL_OF(SQL_INTEGER);
     case NUOSQL_BIGINT:
-        return SYMBOL_OF(SQL_BIGINT);
+        symbol = ID2SYM(rb_intern("integer"));
+        break;
+
     case NUOSQL_FLOAT:
-        return SYMBOL_OF(SQL_FLOAT);
     case NUOSQL_DOUBLE:
-        return SYMBOL_OF(SQL_DOUBLE);
+        symbol = ID2SYM(rb_intern("float"));
+        break;
+
     case NUOSQL_CHAR:
-        return SYMBOL_OF(SQL_CHAR);
     case NUOSQL_VARCHAR:
-        return SYMBOL_OF(SQL_STRING);
     case NUOSQL_LONGVARCHAR:
-        return SYMBOL_OF(SQL_LONGVARCHAR);
-    case NUOSQL_DATE:
-        return SYMBOL_OF(SQL_DATE);
-    case NUOSQL_TIME:
-        return SYMBOL_OF(SQL_TIME);
-    case NUOSQL_TIMESTAMP:
-        return SYMBOL_OF(SQL_TIMESTAMP);
-    case NUOSQL_BLOB:
-        return SYMBOL_OF(SQL_BLOB);
-    case NUOSQL_CLOB:
-        return SYMBOL_OF(SQL_CLOB);
-    case NUOSQL_NUMERIC:
-        return SYMBOL_OF(SQL_NUMERIC);
-    case NUOSQL_DECIMAL:
-        return SYMBOL_OF(SQL_DECIMAL);
+        symbol = ID2SYM(rb_intern("string"));
+        break;
+
+    case NUOSQL_BIT:
     case NUOSQL_BOOLEAN:
-        return SYMBOL_OF(SQL_BOOLEAN);
+        symbol = ID2SYM(rb_intern("boolean"));
+        break;
+
+    case NUOSQL_DATE:
+        symbol = ID2SYM(rb_intern("date"));
+        break;
+
+    case NUOSQL_TIMESTAMP:
+        symbol = ID2SYM(rb_intern("timestamp"));
+        break;
+
+    case NUOSQL_TIME:
+        symbol = ID2SYM(rb_intern("time"));
+        break;
+
+    case NUOSQL_DECIMAL:
+        symbol = ID2SYM(rb_intern("decimal"));
+        break;
+
+    case NUOSQL_NUMERIC:
+        symbol = ID2SYM(rb_intern("numeric"));
+        break;
+
+//    case NUOSQL_BLOB:
+//        symbol = ID2SYM(rb_intern("blob"));
+//        break;
+//
+//    case NUOSQL_CLOB:
+//        symbol = ID2SYM(rb_intern("clob"));
+//        break;
+
+    case NUOSQL_NULL:
+    case NUOSQL_BLOB:
+    case NUOSQL_CLOB:
     case NUOSQL_BINARY:
-        return SYMBOL_OF(SQL_BINARY);
     case NUOSQL_LONGVARBINARY:
-        return SYMBOL_OF(SQL_LONGVARBINARY);
     default:
-        // raise FEATURE_NOT_YET_IMPLEMENTED for unsupported types
-        rb_raise_nuodb_error(-2, "Invalid SQL type: %d", t);
+        rb_raise(rb_eNotImpError, "Unsupported SQL type: %d", type);
+    }
+    return symbol;
+}
+static
+VALUE nuodb_result_alloc(VALUE parent, NuoDB::ResultSet * results, NuoDB::Connection * connection)
+{
+    trace("nuodb_result_alloc");
+    nuodb_handle * parent_handle = cast_handle<nuodb_handle>(parent);
+    if (parent_handle != NULL)
+    {
+        nuodb_result_handle * handle = ALLOC(struct nuodb_result_handle);
+        handle->free_func = RUBY_DATA_FUNC(nuodb_result_free);
+        handle->atomic = 0;
+        handle->parent = parent;
+        handle->parent_handle = parent_handle;
+        handle->pointer = results;
+        handle->connection = connection;
+        incr_reference_count(handle);
+        VALUE self = Data_Wrap_Struct(nuodb_result_klass, nuodb_result_mark, nuodb_result_decr_reference_count, handle);
+
+        rb_iv_set(self, "@columns", Qnil);
+        rb_iv_set(self, "@rows", Qnil);
+
+        if (!rb_block_given_p()) {
+            trace("nuodb_result_alloc: no block");
+
+            return self;
+        }
+
+        trace("nuodb_result_alloc: begin block");
+
+        int exception = 0;
+        VALUE result = rb_protect(rb_yield, self, &exception);
+
+        trace("nuodb_result_alloc: end block");
+
+        //nuodb_result_finish(self);
+
+        trace("nuodb_result_alloc: auto finish");
+
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+        else
+        {
+            return result;
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: statement handle nil");
+    }
+    return Qnil;
+}
+
+static VALUE
+nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
+{
+    VALUE value = Qnil;
+
+    switch (type)
+    {
+        case NUOSQL_BIT:
+        case NUOSQL_BOOLEAN:
+        {
+            // try-catch b.c. http://tools/jira/browse/DB-2379
+            try
+            {
+                bool field = results->getBoolean(column);
+                if (!results->wasNull())
+                {
+                    value = AS_QBOOL(field);
+                }
+            }
+            catch (SQLException & e)
+            {
+                 // see JDBC spec, DB-2379, however, according to RoR rules this
+                 // should return nil. See the following test case:
+                 // test_default_values_on_empty_strings(BasicsTest) [test/cases/base_test.rb:]
+            }
+            break;
+        }
+        case NUOSQL_FLOAT:
+        case NUOSQL_DOUBLE:
+        {
+            double field = results->getDouble(column);
+            if (!results->wasNull())
+            {
+                value = rb_float_new(field);
+            }
+            break;
+        }
+        case NUOSQL_TINYINT:
+        case NUOSQL_SMALLINT:
+        case NUOSQL_INTEGER:
+        {
+            int field = results->getInt(column);
+            if (!results->wasNull())
+            {
+                value = INT2NUM(field);
+            }
+            break;
+        }
+        case NUOSQL_BIGINT:
+        {
+            int64_t field = results->getLong(column);
+            if (!results->wasNull())
+            {
+                value = LONG2NUM(field);
+            }
+            break;
+        }
+        case NUOSQL_CHAR:
+        case NUOSQL_VARCHAR:
+        case NUOSQL_LONGVARCHAR:
+        {
+            char const * field = results->getString(column);
+            if (!results->wasNull())
+            {
+                value = rb_str_new2(field);
+            }
+            break;
+        }
+        case NUOSQL_DATE:
+        {
+            NuoDB::Date * field = results->getDate(column);
+            if (!results->wasNull())
+            {
+                double secs = (double) field->getSeconds();
+                VALUE time = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs));
+                value = rb_funcall(time, rb_intern("to_date"), 0);
+            }
+            break;
+        }
+        case NUOSQL_TIME:
+        case NUOSQL_TIMESTAMP:
+        {
+            NuoDB::Timestamp * field = results->getTimestamp(column);
+            if (!results->wasNull())
+            {
+                double secs = ((double) field->getSeconds()) + (((double) field->getNanos()) / 1000000);
+                value = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs));
+            }
+            break;
+        }
+        case NUOSQL_NUMERIC:
+        {
+            char const * field = results->getString(column);
+            if (!results->wasNull())
+            {
+                rb_require("bigdecimal");
+                VALUE klass = rb_const_get(rb_cObject, rb_intern("BigDecimal"));
+                VALUE args[1];
+                args[0] = rb_str_new2(field);
+                value = rb_class_new_instance(1, args, klass);
+            }
+            break;
+        }
+        default:
+        {
+            rb_raise(rb_eTypeError, "not a supported ruby type: %d", type);
+            break;
+        }
+    }
+    return value;
+}
+
+/*
+ * call-seq:
+ *      result.columns -> ary
+ *
+ * Returns an array of Column objects.
+ *
+ *      results = statement.results
+ *      ...
+ *      results.columns.each do |column|
+ *          puts "#{column.name}, #{column.default}, #{column.type}, #{column.null}"
+ *      end
+ */
+static VALUE
+nuodb_result_columns(VALUE self)
+{
+    trace("nuodb_result_columns");
+    nuodb_result_handle * handle = cast_handle<nuodb_result_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        VALUE columns = rb_iv_get(self, "@columns");
+        if (NIL_P(columns))
+        {
+            try
+            {
+                ResultSetMetaData * result_metadata = handle->pointer->getMetaData();
+                DatabaseMetaData * database_metadata = handle->connection->getMetaData();
+
+                VALUE array = rb_ary_new();
+                rb_require("nuodb/column");
+                VALUE column_klass = rb_const_get(m_nuodb, rb_intern("Column"));
+
+                int column_count = result_metadata->getColumnCount();
+                for (int column_index = 1; column_index < column_count + 1; ++column_index)
+                {
+                    char const * schema_name = result_metadata->getSchemaName(column_index);
+                    char const * table_name = result_metadata->getTableName(column_index);
+                    char const * column_name = result_metadata->getColumnName(column_index);
+
+                    // args: [name, default, sql_type, null]
+                    VALUE args[4];
+
+                    args[0] = rb_str_new2(result_metadata->getColumnLabel(column_index));
+
+                    ResultSet * database_metadata_results = database_metadata->getColumns(NULL,
+                        schema_name, table_name, column_name);
+
+                    if(database_metadata_results->next())
+                    {
+                        try
+                        {
+                            args[1] = nuodb_get_rb_value(database_metadata_results->findColumn("COLUMN_DEF"),
+                                (SqlType) result_metadata->getColumnType(column_index), database_metadata_results);
+                        }
+                        catch (SQLException & e)
+                        {
+                            args[1] = Qnil;
+                        }
+                    }
+                    else
+                    {
+                        args[1] = Qnil;
+                    }
+                    database_metadata_results->close();
+
+                    args[2] = nuodb_map_sql_type(result_metadata->getColumnType(column_index));
+                    args[3] = result_metadata->isNullable(column_index) ? Qtrue : Qfalse;
+
+                    VALUE column = rb_class_new_instance(4, args, column_klass);
+                    rb_ary_push(array, column);
+                }
+
+                rb_iv_set(self, "@columns", array);
+
+                return array;
+            }
+            catch (SQLException & e)
+            {
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to create column info: %s", e.getText());
+            }
+        }
+        else
+        {
+            return columns;
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: result handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *      result.rows -> ary
+ *
+ * Returns an array of rows, each of which is an array of values.
+ *
+ * Note that calling #rows for large result sets is sub-optimal as it will load
+ * the entire dataset into memory. Users should prefer calling #each over #rows.
+ *
+ *      results = statement.results
+ *      ...
+ *      results.rows.each do |row|
+ *          row.each do |value|
+ *              puts value
+ *          end
+ *      end
+ */
+static VALUE
+nuodb_result_rows(VALUE self)
+{
+    trace("nuodb_result_rows");
+    nuodb_result_handle * handle = cast_handle<nuodb_result_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        VALUE rows = rb_iv_get(self, "@rows");
+        if (NIL_P(rows))
+        {
+            try
+            {
+                VALUE rows = rb_ary_new();
+
+                while (handle->pointer->next())
+                {
+                    VALUE row = rb_ary_new();
+
+                    NuoDB::ResultSetMetaData * metadata = handle->pointer->getMetaData();
+                    int32_t column_count = metadata->getColumnCount();
+                    for (int32_t column = 1; column < column_count + 1; column++)
+                    {
+                        SqlType type = (SqlType) metadata->getColumnType(column);
+                        rb_ary_push(row, nuodb_get_rb_value(column, type, handle->pointer));
+                    }
+
+                    rb_ary_push(rows, row);
+                }
+
+                rb_iv_set(self, "@rows", rows);
+
+                return rows;
+            }
+            catch (SQLException & e)
+            {
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to create a rows array: %s", e.getText());
+            }
+        }
+        else
+        {
+            return rows;
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: result handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *      result.each { |tuple| ... }
+ *
+ * Invokes the block for each tuple in the result set.
+ *
+ *      connection.prepare select_dml do |select|
+ *          ...
+ *          if select.execute
+ *              select.results.each do |row|
+ *                  ...
+ *              end
+ *          end
+ *      end
+ */
+static VALUE
+nuodb_result_each(VALUE self)
+{
+    trace("nuodb_result_each");
+    nuodb_result_handle * handle = cast_handle<nuodb_result_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        VALUE rows = rb_iv_get(self, "@rows");
+        if (NIL_P(rows))
+        {
+            while (handle->pointer->next())
+            {
+                VALUE array = rb_ary_new();
+
+                NuoDB::ResultSetMetaData * metadata = handle->pointer->getMetaData();
+                int32_t column_count = metadata->getColumnCount();
+                for (int32_t column = 1; column < column_count + 1; column++)
+                {
+                    SqlType type = (SqlType) metadata->getColumnType(column);
+                    rb_ary_push(array, nuodb_get_rb_value(column, type, handle->pointer));
+                }
+
+                rb_yield(array);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < RARRAY_LEN(rows); i++)
+            {
+                rb_yield(rb_ary_entry(rows, i));
+            }
+        }
+        return self;
     }
 }
 
-//------------------------------------------------------------------------------
-
-void WrapStatement::init(VALUE module)
+static
+void nuodb_define_result_api()
 {
-    INIT_TYPE("Statement");
-    DEFINE_METHOD(close, 0);
-    DEFINE_METHOD(execute, 1);
-    DEFINE_METHOD(executeQuery, 1);
-    DEFINE_METHOD(executeUpdate, 1);
-    DEFINE_METHOD(getResultSet, 0);
-    DEFINE_METHOD(getUpdateCount, 0);
-    DEFINE_METHOD(getGeneratedKeys, 0);
-}
+    /*
+     * A Result object maintains a connection to a specific database. SQL
+     * statements are executed and results are returned within the context of
+     * a connection.
+     */
+    nuodb_result_klass = rb_define_class_under(m_nuodb, "Result", rb_cObject);
+    rb_include_module(nuodb_result_klass, rb_mEnumerable);
 
-VALUE WrapStatement::close(VALUE self)
-{
-    try
-    {
-        asPtr(self)->close();
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close statement: %s", e.getText());
-    }
-}
-
-VALUE WrapStatement::execute(VALUE self, VALUE sqlValue)
-{
-    const char* sql = StringValuePtr(sqlValue);
-    try
-    {
-        return AS_QBOOL(asPtr(self)->execute(sql, NuoDB::RETURN_GENERATED_KEYS ));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL statement (\"%s\"): %s", sql, e.getText());
-    }
-}
-
-VALUE WrapStatement::executeQuery(VALUE self, VALUE sqlValue)
-{
-    const char* sql = StringValuePtr(sqlValue);
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->executeQuery(sql));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL query statement (\"%s\"): %s", sql, e.getText());
-    }
-}
-
-VALUE WrapStatement::executeUpdate(VALUE self, VALUE sqlValue)
-{
-    const char* sql = StringValuePtr(sqlValue);
-    try
-    {
-        return INT2NUM(asPtr(self)->executeUpdate(sql));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL update statement (\"%s\"): %s", sql, e.getText());
-    }
-}
-
-VALUE WrapStatement::getResultSet(VALUE self)
-{
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getResultSet());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get statement result set: %s", e.getText());
-    }
-}
-
-VALUE WrapStatement::getUpdateCount(VALUE self)
-{
-    try
-    {
-        return INT2NUM(asPtr(self)->getUpdateCount());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get update count for statement: %s", e.getText());
-    }
-}
-
-VALUE WrapStatement::getGeneratedKeys(VALUE self)
-{
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getGeneratedKeys());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get generated keys for statement: %s", e.getText());
-    }
-}
-
-//------------------------------------------------------------------------------
-
-void WrapPreparedStatement::init(VALUE module)
-{
-    INIT_TYPE("PreparedStatement");
-    DEFINE_METHOD(close, 0);
-    DEFINE_METHOD(setBoolean, 2);
-    DEFINE_METHOD(setInteger, 2);
-    DEFINE_METHOD(setDouble, 2);
-    DEFINE_METHOD(setString, 2);
-    DEFINE_METHOD(setTime, 2);
-    DEFINE_METHOD(execute, 0);
-    DEFINE_METHOD(executeQuery, 0);
-    DEFINE_METHOD(executeUpdate, 0);
-    DEFINE_METHOD(getResultSet, 0);
-    DEFINE_METHOD(getUpdateCount, 0);
-    DEFINE_METHOD(getGeneratedKeys, 0);
-}
-
-VALUE WrapPreparedStatement::close(VALUE self)
-{
-    try
-    {
-        asPtr(self)->close();
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::setTime(VALUE self, VALUE indexValue, VALUE valueValue)
-{
-    int32_t index = NUM2UINT(indexValue);
-    struct timeval tv = rb_time_timeval(valueValue);
-
-    SqlDate d( (((int64_t)tv.tv_sec)* 1000)+ (((int64_t)tv.tv_usec)/ 1000));
-    try
-    {
-        asPtr(self)->setDate(index, &d);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement setTime(%d, %lld) failed: %s",
-            index, d.getMilliseconds(), e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::setBoolean(VALUE self, VALUE indexValue, VALUE valueValue)
-{
-    int32_t index = NUM2UINT(indexValue);
-    bool value = valueValue ? true : false;
-    try
-    {
-        asPtr(self)->setInt(index, value);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement boolean value (%d, %s): %s",
-            index, (value ? "true" : "false"), e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::setInteger(VALUE self, VALUE indexValue, VALUE valueValue)
-{
-    int32_t index = NUM2UINT(indexValue);
-    int32_t value = NUM2INT(valueValue);
-    try
-    {
-        asPtr(self)->setInt(index, value);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement integer value (%d, %d): %s", index, value, e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::setDouble(VALUE self, VALUE indexValue, VALUE valueValue)
-{
-    int32_t index = NUM2UINT(indexValue);
-    double value = NUM2DBL(valueValue);
-    try
-    {
-        asPtr(self)->setDouble(index, value);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement double value (%d, %g): %s", index, value, e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::setString(VALUE self, VALUE indexValue, VALUE valueValue)
-{
-    int32_t index = NUM2UINT(indexValue);
-    char const* value =  StringValuePtr(valueValue);
-    try
-    {
-        asPtr(self)->setString(index, value);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement string value (%d, \"%s\"): %s", index, value, e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::execute(VALUE self)
-{
-    try
-    {
-        return AS_QBOOL(asPtr(self)->execute());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::executeQuery(VALUE self)
-{
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->executeQuery());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL query prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::executeUpdate(VALUE self)
-{
-    try
-    {
-        return INT2NUM(asPtr(self)->executeUpdate());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL update prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::getResultSet(VALUE self)
-{
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getResultSet());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the result set for the prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::getUpdateCount(VALUE self)
-{
-    try
-    {
-        return INT2NUM(asPtr(self)->getUpdateCount());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the update count for the prepared statement: %s", e.getText());
-    }
-}
-
-VALUE WrapPreparedStatement::getGeneratedKeys(VALUE self)
-{
-    try
-    {
-        return WrapResultSet::wrap(asPtr(self)->getGeneratedKeys());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the generated keys for the prepared statement: %s", e.getText());
-    }
-}
-
-//------------------------------------------------------------------------------
-
-void WrapConnection::init(VALUE module)
-{
-    type = rb_define_class_under(module, "Connection", rb_cObject);
+    rb_define_attr(nuodb_result_klass, "columns", 1, 0);
+    rb_define_attr(nuodb_result_klass, "rows", 1, 0);
 
     // DBI
 
-    // todo add .columns, or not? If we did: .columns(table_name)
-    // todo and tie this into the SchemaCache on the Ruby side.
-    rb_define_method(type, "commit", RUBY_METHOD_FUNC(commit), 0);
-    rb_define_method(type, "disconnect", RUBY_METHOD_FUNC(close), 0);
-    rb_define_method(type, "ping", RUBY_METHOD_FUNC(ping), 0);
-    rb_define_method(type, "prepare", RUBY_METHOD_FUNC(createPreparedStatement), 1);
-    rb_define_method(type, "rollback", RUBY_METHOD_FUNC(rollback), 0);
-    // todo add .tables, definitely!
-
-    // NUODB EXTENSIONS
-
-    rb_define_method(type, "autocommit=", RUBY_METHOD_FUNC(setAutoCommit), 1);
-    rb_define_method(type, "autocommit?", RUBY_METHOD_FUNC(hasAutoCommit), 0);
-
-    // DEPRECATED, going away shortly...
-
-    // todo use .new and .initialize instead...
-    DEFINE_SINGLE(createSqlConnection, 4);
-    DEFINE_METHOD(createStatement, 0);
-    DEFINE_METHOD(createPreparedStatement, 1);
-    DEFINE_METHOD(setAutoCommit, 1);
-    DEFINE_METHOD(hasAutoCommit, 0);
-    DEFINE_METHOD(getMetaData, 0);
-    DEFINE_METHOD(close, 0);
-    DEFINE_METHOD(getSchema, 0);
-}
-
-VALUE WrapConnection::getSchema(VALUE self)
-{
-    try
-    {
-        return rb_str_new2(asPtr(self)->getSchema());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get schema for connection: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::close(VALUE self)
-{
-    try
-    {
-        asPtr(self)->close();
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully disconnect connection: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::ping(VALUE self)
-{
-    try
-    {
-        asPtr(self)->ping();
-        return Qtrue;
-    }
-    catch (SQLException & e)
-    {
-        return Qfalse;
-    }
-}
-
-VALUE WrapConnection::createStatement(VALUE self)
-{
-    try
-    {
-        return WrapStatement::wrap(asPtr(self)->createStatement());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to create statement: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::createPreparedStatement(VALUE self, VALUE sqlValue)
-{
-    const char * sql = StringValuePtr(sqlValue);
-    try
-    {
-        return WrapPreparedStatement::wrap( asPtr(self)->prepareStatement(sql, NuoDB::RETURN_GENERATED_KEYS));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to create prepared statement (%s): %s", sql, e.getText());
-    }
-}
-
-VALUE WrapConnection::setAutoCommit(VALUE self, VALUE autoCommitValue)
-{
-    bool autoCommit = !(RB_TYPE_P(autoCommitValue, T_FALSE) || RB_TYPE_P(autoCommitValue, T_NIL));
-    try
-    {
-        asPtr(self)->setAutoCommit(autoCommit);
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set auto-commit (%d) for connection: %s", autoCommit, e.getText());
-    }
-}
-
-VALUE WrapConnection::hasAutoCommit(VALUE self)
-{
-    try
-    {
-        return AS_QBOOL(asPtr(self)->getAutoCommit());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to determine auto-commit state for connection: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::commit(VALUE self)
-{
-    try
-    {
-        asPtr(self)->commit();
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to commit transaction: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::rollback(VALUE self)
-{
-    try
-    {
-        asPtr(self)->rollback();
-        return Qnil;
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to rollback transaction: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::getMetaData(VALUE self)
-{
-    try
-    {
-        return WrapDatabaseMetaData::wrap( asPtr(self)->getMetaData());
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(), "Failed to get database metadata: %s", e.getText());
-    }
-}
-
-VALUE WrapConnection::createSqlConnection(VALUE self,
-    VALUE databaseValue,
-    VALUE schemaValue,
-    VALUE usernameValue,
-    VALUE passwordValue)
-{
-    char const* database = StringValuePtr(databaseValue);
-    char const* schema = StringValuePtr(schemaValue);
-    char const* username = StringValuePtr(usernameValue);
-    char const* password = StringValuePtr(passwordValue);
-
-    try
-    {
-        return WrapConnection::wrap( getDatabaseConnection(database,
-            username,
-            password,
-            1,
-            "schema",
-            schema));
-    }
-    catch (SQLException & e)
-    {
-        rb_raise_nuodb_error(e.getSqlcode(),
-            "Failed to create database connection (\"%s\", \"%s\", ********, \"%s\"): %s",
-            database,
-            username,
-            schema,
-            e.getText());
-    }
+    rb_define_method(nuodb_result_klass, "each", RUBY_METHOD_FUNC(nuodb_result_each), 0);
+    rb_define_method(nuodb_result_klass, "columns", RUBY_METHOD_FUNC(nuodb_result_columns), 0);
+    rb_define_method(nuodb_result_klass, "rows", RUBY_METHOD_FUNC(nuodb_result_rows), 0);
+    //rb_define_method(nuodb_result_klass, "finish", RUBY_METHOD_FUNC(nuodb_result_finish), 0);
 }
 
 //------------------------------------------------------------------------------
 
+static
+VALUE nuodb_statement_free_protect(VALUE value)
+{
+    trace("nuodb_statement_free_protect");
+    nuodb_statement_handle * handle = reinterpret_cast<nuodb_statement_handle*>(value);
+    if (handle != NULL)
+    {
+        if (handle->pointer != NULL)
+        {
+            try
+            {
+                log(INFO, "closing statement");
+                handle->pointer->close();
+                handle->pointer = NULL;
+            }
+            catch (SQLException & e)
+            {
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close statement: %s", e.getText());
+            }
+        }
+    }
+    return Qnil;
+}
+
+static
+void nuodb_statement_free(void * ptr)
+{
+    trace("nuodb_statement_free");
+    if (ptr != NULL)
+    {
+        int exception = 0;
+        rb_protect(nuodb_statement_free_protect, reinterpret_cast<VALUE>(ptr), &exception);
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+    }
+}
+
+static
+void nuodb_statement_mark(void * ptr)
+{
+    trace("nuodb_statement_mark");
+
+    nuodb_statement_handle * handle = static_cast<nuodb_statement_handle *>(ptr);
+    rb_gc_mark(handle->parent);
+}
+
+static
+void nuodb_statement_decr_reference_count(void * ptr)
+{
+    trace("nuodb_statement_decr_reference_count");
+    decr_reference_count(static_cast<nuodb_statement_handle *>(ptr));
+}
+
+/*
+ * call-seq:
+ *  finish()
+ *
+ * Releases the statement and any associated resources.
+ */
+static
+VALUE nuodb_statement_finish(VALUE self)
+{
+    trace("nuodb_statement_finish");
+    nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);//reinterpret_cast<nuodb_statement_handle*>(value);
+    nuodb_statement_free(handle);
+//    if (handle != NULL)
+//    {
+//        if (handle->pointer != NULL)
+//        {
+//            try
+//            {
+//                log(INFO, "closing statement");
+//                handle->pointer->close();
+//                handle->pointer = NULL;
+//            }
+//            catch (SQLException & e)
+//            {
+//                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close statement: %s", e.getText());
+//            }
+//        }
+//    }
+    return Qnil;
+//
+//    if (ENABLE_CLOSE_HOOK)
+//    {
+//        nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);
+//        if (handle != NULL && handle->pointer != NULL)
+//        {
+//            nuodb_statement_decr_reference_count(handle);
+//        }
+//        else
+//        {
+//            rb_raise(rb_eArgError, "invalid state: statement handle nil");
+//        }
+//    }
+//    return Qnil;
+}
+
+static
+VALUE nuodb_statement_initialize(VALUE parent)
+{
+    trace("nuodb_statement_initialize");
+
+    nuodb_connection_handle * parent_handle = cast_handle<nuodb_connection_handle>(parent);
+    if (parent_handle != NULL && parent_handle->pointer != NULL)
+    {
+        NuoDB::Statement * statement = NULL;
+        try
+        {
+            statement = parent_handle->pointer->createStatement();
+        }
+        catch (SQLException & e)
+        {
+            log(ERROR, "rb_raise");
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to create statement: %s", e.getText());
+        }
+
+        nuodb_statement_handle * handle = ALLOC(nuodb_statement_handle);
+
+        nuodb_handle * base = handle;
+
+        handle->free_func = RUBY_DATA_FUNC(&nuodb_statement_free);
+        handle->atomic = 0;
+        handle->parent = parent;
+        handle->parent_handle = parent_handle;
+        handle->pointer = statement;
+        incr_reference_count(handle);
+        assert(handle->atomic = 1);
+        VALUE self = Data_Wrap_Struct(nuodb_statement_klass, nuodb_statement_mark, nuodb_statement_decr_reference_count, handle);
+        if (!rb_block_given_p()) {
+            trace("nuodb_statement_initialize: no block");
+            track_ref_count("ALLOC STMT S", cast_handle<nuodb_handle>(self));
+            return self;
+        }
+
+        trace("nuodb_statement_initialize: begin block");
+
+        int exception = 0;
+        VALUE result = rb_protect(rb_yield, self, &exception);
+
+        trace("nuodb_statement_initialize: end block");
+
+        // n.b. don't do this as it may introduce crashes of the ruby process !!!
+        //nuodb_statement_finish(self);
+
+        trace("nuodb_statement_initialize: auto finish");
+
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+        else
+        {
+            return result;
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: statement handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  execute(sql) -> Bool
+ *
+ * Executes a statement.
+ *
+ * Returns true if the result is a Result object; returns false if the result is
+ * an update count or there is no result. For the latter case, count() should be
+ * called next, for the former case each() should be called.
+ */
+static
+VALUE nuodb_statement_execute(VALUE self, VALUE sql)
+{
+    if (TYPE(sql) != T_STRING)
+    {
+        rb_raise(rb_eTypeError, "wrong sql argument type %s (String expected)", rb_class2name(CLASS_OF(sql)));
+    }
+
+    nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return AS_QBOOL(handle->pointer->execute(StringValuePtr(sql),
+                NuoDB::RETURN_GENERATED_KEYS));
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *  count() -> Number
+ *
+ * Returns the update count for an update statement.
+ */
+static
+VALUE nuodb_statement_update_count(VALUE self)
+{
+    trace("nuodb_statement_update_count");
+
+    nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return INT2NUM(handle->pointer->getUpdateCount());
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the update count for the statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  results() -> Results
+ *
+ * Retrieves a result set containing rows for the related query.
+ */
+static VALUE nuodb_statement_results(VALUE self)
+{
+    trace("nuodb_statement_results");
+
+    nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return nuodb_result_alloc(self, handle->pointer->getResultSet(), handle->pointer->getConnection());
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the result set for the statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: statement handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  generated_keys() -> Results
+ *
+ * Retrieves a result set containing the generated keys related to the
+ * previously executed insert.
+ */
+static VALUE nuodb_statement_generated_keys(VALUE self)
+{
+    trace("nuodb_statement_generated_keys");
+
+    nuodb_statement_handle * handle = cast_handle<nuodb_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            // this hack should not have been necessary; it should never have
+            // returned null, this is a product defect.
+            ResultSet * results = handle->pointer->getGeneratedKeys();
+            if (results != NULL)
+            {
+                return nuodb_result_alloc(self, results, handle->pointer->getConnection());
+            }
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the generated keys for the statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: statement handle nil");
+    }
+    return Qnil;
+}
+
+static
+void nuodb_define_statement_api()
+{
+    /*
+     * Document-class: NuoDB::Statement
+     *
+     * A Statement object maintains a connection to a specific database. SQL
+     * statements are executed and results are returned within the context of
+     * a connection.
+     */
+    nuodb_statement_klass = rb_define_class_under(m_nuodb, "Statement", rb_cObject);
+
+    // DBI
+
+    rb_define_method(nuodb_statement_klass, "execute", RUBY_METHOD_FUNC(nuodb_statement_execute), 1);
+    //rb_define_method(nuodb_statement_klass, "finish", RUBY_METHOD_FUNC(nuodb_statement_finish), 0);
+
+    // NUODB EXTENSIONS
+
+    rb_define_method(nuodb_statement_klass, "count", RUBY_METHOD_FUNC(nuodb_statement_update_count), 0);
+    rb_define_method(nuodb_statement_klass, "generated_keys", RUBY_METHOD_FUNC(nuodb_statement_generated_keys), 0);
+    rb_define_method(nuodb_statement_klass, "results", RUBY_METHOD_FUNC(nuodb_statement_results), 0);
+}
+
+//------------------------------------------------------------------------------
+
+static
+VALUE nuodb_prepared_statement_free_protect(VALUE value)
+{
+    trace("nuodb_prepared_statement_free_protect");
+    nuodb_prepared_statement_handle * handle = reinterpret_cast<nuodb_prepared_statement_handle *>(value);
+    track_ref_count("PS FREE PROTECT", handle);
+    if (handle != NULL)
+    {
+        if (handle->pointer != NULL)
+        {
+            try
+            {
+                log(INFO, "closing prepared statement");
+                handle->pointer->close();
+                handle->pointer = NULL;
+            }
+            catch (SQLException & e)
+            {
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close statement: %s", e.getText());
+            }
+        }
+    }
+    return Qnil;
+}
+
+static
+void nuodb_prepared_statement_free(void * ptr)
+{
+    trace("nuodb_prepared_statement_free");
+
+    if (ptr != NULL)
+    {
+        int exception = 0;
+        rb_protect(nuodb_prepared_statement_free_protect, reinterpret_cast<VALUE>(ptr), &exception);
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+    }
+}
+
+static
+void nuodb_prepared_statement_mark(void * ptr)
+{
+    trace("nuodb_prepared_statement_mark");
+
+    nuodb_prepared_statement_handle * handle = static_cast<nuodb_prepared_statement_handle *>(ptr);
+    rb_gc_mark(handle->parent);
+}
+
+static
+void nuodb_prepared_statement_decr_reference_count(nuodb_handle * handle)
+{
+    trace("nuodb_prepared_statement_decr_reference_count");
+    decr_reference_count(handle);
+}
+
+/*
+ * call-seq:
+ *  finish()
+ *
+ * Releases the prepared statement and any associated resources.
+ */
+static
+VALUE nuodb_prepared_statement_finish(VALUE self)
+{
+    trace("nuodb_prepared_statement_finish");
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);//reinterpret_cast<nuodb_prepared_statement_handle *>(value);
+    track_ref_count("FINISH PSTMT", handle);
+    nuodb_prepared_statement_free(handle);
+//    if (handle != NULL)
+//    {
+//        if (handle->pointer != NULL)
+//        {
+//            try
+//            {
+//                track_ref_count("CLOSE PSTMT", handle);
+//                log(INFO, "closing prepared statement");
+//                handle->pointer->close();
+//                handle->pointer = NULL;
+//            }
+//            catch (SQLException & e)
+//            {
+//                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close statement: %s", e.getText());
+//            }
+//        }
+//    }
+    return Qnil;
+//
+//    if (ENABLE_CLOSE_HOOK)
+//    {
+//        nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+//        if (handle != NULL && handle->pointer != NULL)
+//        {
+//            nuodb_prepared_statement_decr_reference_count(handle);
+//        }
+//        else
+//        {
+//            rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+//        }
+//    }
+//    return Qnil;
+}
+
+static
+VALUE nuodb_prepared_statement_initialize(VALUE parent, VALUE sql)
+{
+    trace("nuodb_prepared_statement_initialize");
+
+    if (TYPE(sql) != T_STRING)
+    {
+        rb_raise(rb_eTypeError, "wrong sql argument type %s (String expected)", rb_class2name(CLASS_OF(sql)));
+    }
+
+    nuodb_connection_handle * parent_handle = cast_handle<nuodb_connection_handle>(parent);
+    if (parent_handle != NULL && parent_handle->pointer != NULL)
+    {
+        NuoDB::PreparedStatement * statement = NULL;
+        try
+        {
+            statement = parent_handle->pointer->prepareStatement(StringValuePtr(sql),
+                    NuoDB::RETURN_GENERATED_KEYS);
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to create prepared statement (%s): %s", sql, e.getText());
+        }
+
+        nuodb_prepared_statement_handle * handle = ALLOC(struct nuodb_prepared_statement_handle);
+        handle->free_func = RUBY_DATA_FUNC(&nuodb_prepared_statement_free);
+        handle->atomic = 0;
+        handle->parent = parent;
+        handle->parent_handle = parent_handle;
+        handle->pointer = statement;
+        incr_reference_count(handle);
+        assert(handle->atomic == 1);
+        VALUE self = Data_Wrap_Struct(nuodb_prepared_statement_klass, nuodb_prepared_statement_mark, nuodb_prepared_statement_decr_reference_count, handle);
+
+        if (!rb_block_given_p()) {
+            trace("nuodb_prepared_statement_initialize: no block");
+
+            return self;
+        }
+
+        trace("nuodb_prepared_statement_initialize: begin block");
+
+        int exception = 0;
+        VALUE result = rb_protect(rb_yield, self, &exception);
+
+        trace("nuodb_prepared_statement_initialize: end block");
+
+        // n.b. don't do this as it may introduce crashes of the ruby process !!!
+        //nuodb_prepared_statement_finish(self);
+
+        trace("nuodb_prepared_statement_initialize: auto finish");
+
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+        else
+        {
+            return result;
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+    return Qnil;
+}
+
+static
+void raise_unsupported_type_at_index(char const * type_name, int32_t index)
+{
+    rb_raise(rb_eTypeError, "unsupported type %s at %d", type_name, index);
+}
+
+/*
+ * call-seq:
+ *  bind_param(param, value)
+ *
+ * Attempts to bind the value to this statement as the parameter number specified.
+ *
+ *  connection.prepare insert_dml do |statement|
+ *      statement.bind_param(1, "Joe Smith")
+ *      statement.execute
+ *  end  #=> implicit statement.finish
+ */
+static
+VALUE nuodb_prepared_statement_bind_param(VALUE self, VALUE param, VALUE value)
+{
+    trace("nuodb_prepared_statement_bind_param");
+
+    if (TYPE(param) != T_FIXNUM)
+    {
+        rb_raise(rb_eTypeError, "index must be a number");
+    }
+    int32_t index = NUM2UINT(param);
+
+    NuoDB::PreparedStatement * statement = cast_pointer_member<
+                                           nuodb_prepared_statement_handle, NuoDB::PreparedStatement>(self);
+
+    try
+    {
+        switch (TYPE(value))
+        {
+        case T_FLOAT: // 0x04
+            {
+                log(DEBUG, "supported: T_FLOAT");
+                double real_value = NUM2DBL(value);
+                statement->setDouble(index, real_value);
+            }
+            break;
+        case T_STRING: // 0x05
+            {
+                log(DEBUG, "supported: T_STRING");
+                char const * real_value = RSTRING_PTR(value);
+                statement->setString(index, real_value);
+            }
+            break;
+        case T_NIL: // 0x11
+            {
+                log(DEBUG, "supported: T_NIL");
+                statement->setNull(index, 0);
+            }
+            break;
+        case T_TRUE: // 0x12
+            {
+                log(DEBUG, "supported: T_TRUE");
+                statement->setBoolean(index, true);
+            }
+            break;
+        case T_FALSE: // 0x13
+            {
+                log(DEBUG, "supported: T_FALSE");
+                statement->setBoolean(index, false);
+            }
+            break;
+        case T_FIXNUM: // 0x15
+            {
+                log(DEBUG, "supported: T_FIXNUM");
+                int64_t real_value = NUM2LONG(value);
+                statement->setLong(index, real_value);
+            }
+            break;
+        case T_DATA: // 0x22
+            {
+                log(DEBUG, "supported: T_DATA");
+                if (rb_obj_is_instance_of(value, rb_cTime))
+                {
+                    log(DEBUG, "supported Time");
+                    VALUE sec = rb_funcall(value, rb_intern("tv_sec"), 0);
+                    VALUE usec = rb_funcall(value, rb_intern("tv_usec"), 0);
+                    SqlTimestamp sqlTimestamp(NUM2INT(sec), NUM2INT(usec) * 1000);
+                    statement->setTimestamp(index, &sqlTimestamp);
+                    break;
+                }
+                VALUE cDate = rb_const_get(rb_cObject, rb_intern("Date"));
+                if (rb_obj_is_instance_of(value, cDate))
+                {
+                    log(DEBUG, "supported Date");
+                    VALUE time = rb_funcall(value, rb_intern("to_time"), 0);
+                    VALUE sec = rb_funcall(time, rb_intern("tv_sec"), 0);
+                    VALUE usec = rb_funcall(time, rb_intern("tv_usec"), 0);
+                    SqlTimestamp sqlTimestamp(NUM2LONG(sec), NUM2INT(usec) * 1000);
+                    statement->setTimestamp(index, &sqlTimestamp);
+                    break;
+                }
+                break;
+            }
+        case T_OBJECT: // 0x01
+            {
+                log(WARN, "unsupported: T_OBJECT");
+                raise_unsupported_type_at_index("T_OBJECT", index);
+            }
+            break;
+        case T_BIGNUM: // 0x0a
+            {
+                log(DEBUG, "supported: T_BIGNUM");
+                int64_t real_value = NUM2LONG(value);
+                statement->setLong(index, real_value);
+            }
+            break;
+        case T_ARRAY: // 0x07
+            {
+                log(WARN, "unsupported: T_ARRAY");
+                raise_unsupported_type_at_index("T_ARRAY", index);
+            }
+            break;
+        case T_HASH: // 0x08
+            {
+                log(WARN, "unsupported: T_HASH");
+                raise_unsupported_type_at_index("T_HASH", index);
+            }
+            break;
+        case T_STRUCT: // 0x09
+            {
+                log(WARN, "unsupported: T_STRUCT");
+                raise_unsupported_type_at_index("T_STRUCT", index);
+            }
+            break;
+        case T_FILE: // 0x0e
+            {
+                log(WARN, "unsupported: T_FILE");
+                raise_unsupported_type_at_index("T_FILE", index);
+            }
+            break;
+        case T_MATCH: // 0x23
+            {
+                log(WARN, "unsupported: T_MATCH");
+                raise_unsupported_type_at_index("T_MATCH", index);
+            }
+            break;
+        case T_SYMBOL: // 0x24
+            {
+                log(WARN, "unsupported: T_SYMBOL");
+                raise_unsupported_type_at_index("T_SYMBOL", index);
+                break;
+            }
+            break;
+        default:
+            rb_raise(rb_eTypeError, "unsupported type: %d", TYPE(value));
+            break;
+        }
+        return Qnil;
+    }
+    catch (SQLException & e)
+    {
+        rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement parameter(%d, %lld) failed: %s",
+                             index, param, e.getText());
+    }
+}
+
+/*
+ * call-seq:
+ *  bind_params(*binds)
+ *
+ * Attempts to bind the list of values successively using bind_param.
+ *
+ *  connection.prepare insert_dml do |statement|
+ *      statement.bind_params([56, 6.7, "String", Date.new(2001, 12, 3), Time.new])
+ *      statement.execute
+ *  end  #=> implicit statement.finish
+ */
+static
+VALUE nuodb_prepared_statement_bind_params(VALUE self, VALUE array)
+{
+    trace("nuodb_prepared_statement_bind_params");
+
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        for (int i = 0; i < RARRAY_LEN(array); ++i)
+        {
+            VALUE value = RARRAY_PTR(array)[i];
+            nuodb_prepared_statement_bind_param(self, UINT2NUM(i+1), value);
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *  execute() -> Bool
+ *
+ * Executes a prepared statement. Returns true if the result is a Result object;
+ * returns false if the result is an update count or there is no result. For the
+ * latter case, count() should be called next, for the former case each() should
+ * be called.
+ */
+static
+VALUE nuodb_prepared_statement_execute(VALUE self)
+{
+    trace("nuodb_prepared_statement_execute");
+
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return AS_QBOOL(handle->pointer->execute());
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to execute SQL prepared statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *  count() -> Number
+ *
+ * Returns the update count for an update statement.
+ */
+static
+VALUE nuodb_prepared_statement_update_count(VALUE self)
+{
+    trace("nuodb_prepared_statement_update_count");
+
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return INT2NUM(handle->pointer->getUpdateCount());
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the update count for the prepared statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  results() -> Results
+ *
+ * Retrieves a result set containing rows for the related query.
+ */
+static VALUE nuodb_prepared_statement_results(VALUE self)
+{
+    trace("nuodb_prepared_statement_results");
+
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            return nuodb_result_alloc(self, handle->pointer->getResultSet(), handle->pointer->getConnection());
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the result set for the prepared statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  generated_keys() -> Results
+ *
+ * Retrieves a result set containing the generated keys related to the
+ * previously executed insert.
+ */
+static VALUE nuodb_prepared_statement_generated_keys(VALUE self)
+{
+    trace("nuodb_prepared_statement_generated_keys");
+
+    nuodb_prepared_statement_handle * handle = cast_handle<nuodb_prepared_statement_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            // this hack should not have been necessary; it should never have
+            // returned null, this is a product defect.
+            ResultSet * results = handle->pointer->getGeneratedKeys();
+            if (results != NULL)
+            {
+                return nuodb_result_alloc(self, results, handle->pointer->getConnection());
+            }
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the generated keys for the prepared statement: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
+    }
+    return Qnil;
+}
+
+static
+void nuodb_define_prepared_statement_api()
+{
+    /*
+     * Document-class: NuoDB::PreparedStatement
+     *
+     * A PreparedStatement object maintains a connection to a specific database.
+     * SQL statements are executed and results are returned within the context of a
+     * connection.
+     */
+    nuodb_prepared_statement_klass = rb_define_class_under(m_nuodb, "PreparedStatement", rb_cObject);
+
+    // DBI
+
+    rb_define_method(nuodb_prepared_statement_klass, "bind_param", RUBY_METHOD_FUNC(nuodb_prepared_statement_bind_param), 2);
+    rb_define_method(nuodb_prepared_statement_klass, "bind_params", RUBY_METHOD_FUNC(nuodb_prepared_statement_bind_params), 1);
+    rb_define_method(nuodb_prepared_statement_klass, "execute", RUBY_METHOD_FUNC(nuodb_prepared_statement_execute), 0);
+    //rb_define_method(nuodb_prepared_statement_klass, "finish", RUBY_METHOD_FUNC(nuodb_prepared_statement_finish), 0);
+
+    // NUODB EXTENSIONS
+
+    rb_define_method(nuodb_prepared_statement_klass, "count", RUBY_METHOD_FUNC(nuodb_prepared_statement_update_count), 0);
+    rb_define_method(nuodb_prepared_statement_klass, "generated_keys", RUBY_METHOD_FUNC(nuodb_prepared_statement_generated_keys), 0);
+    rb_define_method(nuodb_prepared_statement_klass, "results", RUBY_METHOD_FUNC(nuodb_prepared_statement_results), 0);
+}
+
+//------------------------------------------------------------------------------
+
+/*
+ * Class NuoDB::Connection
+ */
+
+static
+VALUE nuodb_connection_free_protect(VALUE value)
+{
+    trace("nuodb_connection_free_protect");
+
+    nuodb_connection_handle * handle = reinterpret_cast<nuodb_connection_handle *>(value);
+    track_ref_count("FREE CONN CHECK", handle);
+    if (handle != NULL)
+    {
+        track_ref_count("FREE CONN", handle);
+        if (handle->pointer != NULL)
+        {
+            try
+            {
+                track_ref_count("CLOSE CONN", handle);
+                log(INFO, "closing connection");
+                handle->pointer->close();
+                handle->pointer = NULL;
+            }
+            catch (SQLException & e)
+            {
+                log(DEBUG, "rb_raise");
+                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close connection: %s", e.getText());
+            }
+        }
+    }
+    return Qnil;
+}
+
+static
+void nuodb_connection_free(void * ptr)
+{
+    trace("nuodb_connection_free");
+    if (ptr != NULL)
+    {
+        int exception = 0;
+        rb_protect(nuodb_connection_free_protect, reinterpret_cast<VALUE>(ptr), &exception);
+        if (exception)
+        {
+            rb_jump_tag(exception);
+        }
+    }
+}
+
+static
+void nuodb_connection_mark(void * ptr)
+{
+    trace("nuodb_connection_mark");
+
+    nuodb_connection_handle * handle = static_cast<nuodb_connection_handle *>(ptr);
+    track_ref_count("MARK CONN", handle);
+
+    rb_gc_mark(handle->database);
+    rb_gc_mark(handle->username);
+    rb_gc_mark(handle->password);
+    rb_gc_mark(handle->schema);
+}
+
+static
+void nuodb_connection_decr_reference_count(nuodb_handle * handle)
+{
+    trace("nuodb_connection_decr_reference_count");
+    decr_reference_count(handle);
+}
+
+static
+VALUE nuodb_connection_alloc(VALUE klass)
+{
+    trace("nuodb_connection_alloc");
+
+    nuodb_connection_handle * handle = ALLOC(struct nuodb_connection_handle);
+    handle->database = Qnil;
+    handle->username = Qnil;
+    handle->password = Qnil;
+    handle->schema = Qnil;
+
+    handle->free_func = RUBY_DATA_FUNC(&nuodb_connection_free);
+    handle->atomic = 0;
+    handle->parent = Qnil;
+    handle->parent_handle = 0;
+    handle->pointer = 0;
+    incr_reference_count(handle);
+
+    print_address("[ALLOC] connection", handle);
+
+    return Data_Wrap_Struct(klass, nuodb_connection_mark, nuodb_connection_decr_reference_count, handle);
+}
+
+void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
+{
+    trace("internal_connection_connect_or_raise");
+
+    if (handle->schema != Qnil)
+    {
+        try
+        {
+            handle->pointer = Connection::create();
+            Properties * props = handle->pointer->allocProperties();
+            props->putValue("user", StringValuePtr(handle->username));
+            props->putValue("password", StringValuePtr(handle->password));
+            props->putValue("schema", StringValuePtr(handle->schema));
+            handle->pointer->openDatabase(StringValuePtr(handle->database), props);
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(),
+                                 "Failed to create database connection (\"%s\", \"%s\", ********, \"%s\"): %s",
+                                 StringValuePtr(handle->database),
+                                 StringValuePtr(handle->username),
+                                 StringValuePtr(handle->schema),
+                                 e.getText());
+        }
+    }
+    else
+    {
+        try
+        {
+            handle->pointer = Connection::create();
+            Properties * props = handle->pointer->allocProperties();
+            props->putValue("user", StringValuePtr(handle->username));
+            props->putValue("password", StringValuePtr(handle->password));
+            handle->pointer->openDatabase(StringValuePtr(handle->database), props);
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(),
+                                 "Failed to create database connection (\"%s\", \"%s\", ********): %s",
+                                 StringValuePtr(handle->database),
+                                 StringValuePtr(handle->username),
+                                 e.getText());
+        }
+    }
+}
+
+/*
+ * call-seq:
+ *  commit()
+ *
+ * Commit the database transaction.
+ *
+ *      NuoDB::Connection.new (hash) do |connection|
+ *          ...
+ *          connection.commit
+ *      end  #=> automatically disconnected connection
+ */
+static VALUE nuodb_connection_commit(VALUE self)
+{
+    trace("nuodb_connection_commit");
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            handle->pointer->commit();
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to commit transaction: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: connection handle nil");
+    }
+    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  disconnect()
+ *
+ * Disconnects the connection.
+ */
+static VALUE nuodb_connection_disconnect(VALUE self)
+{
+    trace("nuodb_connection_disconnect");
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);//;
+    track_ref_count("CONN DISCONNECT", handle);
+    nuodb_connection_free(handle);
+//    if (handle != NULL)
+//    {
+//        track_ref_count("FREE CONN", handle);
+//        if (handle->pointer != NULL)
+//        {
+//            try
+//            {
+//                track_ref_count("CLOSE CONN", handle);
+//                handle->pointer->close();
+//                handle->pointer = NULL;
+//            }
+//            catch (SQLException & e)
+//            {
+//                log(DEBUG, "rb_raise");
+//                rb_raise_nuodb_error(e.getSqlcode(), "Failed to successfully close connection: %s", e.getText());
+//            }
+//        }
+//    }
+    return Qnil;
+//
+//
+//
+//    if (ENABLE_CLOSE_HOOK)
+//    {
+//        nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+//        if (handle != NULL && handle->pointer != NULL)
+//        {
+//            nuodb_connection_decr_reference_count(handle);
+//        }
+//        else
+//        {
+//            rb_raise(rb_eArgError, "invalid state: connection handle nil");
+//        }
+//    }
+//    return Qnil;
+}
+
+/*
+ * call-seq:
+ *  connection.ping         -> boolean
+ *  connection.connected?   -> boolean
+ *
+ * Returns true if the connection is still alive, otherwise false.
+ *
+ *  connection.connected?   #=> true
+ */
+static VALUE nuodb_connection_ping(VALUE self)
+{
+    trace("nuodb_connection_ping");
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            handle->pointer->ping();
+            return Qtrue;
+        }
+        catch (SQLException & e)
+        {
+        }
+    }
+    return Qfalse;
+}
+
+/*
+ * call-seq:
+ *  prepare(sql) -> PreparedStatement
+ *
+ * Creates a prepared statement.
+ *
+ *      NuoDB::Connection.new (hash) do |connection|
+ *          connection.prepare 'insert into foo (f1,f2) values (?, ?)' do |statement|
+ *              statement.bind_params [...]
+ *              statement.execute
+ *          end
+ *      end  #=> automatically disconnected connection
+ */
+static VALUE nuodb_connection_prepare(VALUE self, VALUE sql)
+{
+    trace("nuodb_connection_prepare");
+
+    return nuodb_prepared_statement_initialize(self, sql);
+}
+
+/*
+ * call-seq:
+ *  statement -> Statement
+ *
+ * Creates a statement.
+ *
+ * <b>This is a NuoDB-specific extension.</b>
+ *
+ *      NuoDB::Connection.new (hash) do |connection|
+ *          connection.statement do |statement|
+ *              statement.execute sql
+ *          end
+ *      end  #=> automatically disconnected connection
+ */
+static VALUE nuodb_connection_statement(VALUE self)
+{
+    trace("nuodb_connection_statement");
+
+    return nuodb_statement_initialize(self);
+}
+
+/*
+ * call-seq:
+ *  rollback()
+ *
+ * Rollback the database transaction.
+ *
+ *      NuoDB::Connection.new (hash) do |connection|
+ *          ...
+ *          connection.rollback
+ *      end  #=> automatically disconnected connection
+ */
+static VALUE nuodb_connection_rollback(VALUE self)
+{
+    trace("nuodb_connection_rollback");
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            handle->pointer->rollback();
+            return Qnil;
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to rollback transaction: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: connection handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *  autocommit= boolean
+ *
+ * Sets the connections autocommit state.
+ *
+ *      NuoDB::Connection.new (hash) do |connection|
+ *          connection.autocommit = false
+ *          ...
+ *          connection.commit
+ *      end  #=> automatically disconnected connection
+ *
+ * <b>This is a NuoDB-specific extension.</b>
+ */
+static VALUE nuodb_connection_autocommit_set(VALUE self, VALUE value)
+{
+    trace("nuodb_connection_autocommit_set");
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        bool auto_commit = !(RB_TYPE_P(value, T_FALSE) || RB_TYPE_P(value, T_NIL));
+        try
+        {
+            handle->pointer->setAutoCommit(auto_commit);
+            return Qnil;
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to set autocommit (%d) for connection: %s", auto_commit, e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: connection handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *  autocommit? -> boolean
+ *
+ * Gets the connections autocommit state.
+ *
+ *  unless connection.autocommit? do    #=> false
+ *      connection.commit
+ *  end
+ *
+ * <b>This is a NuoDB-specific extension.</b>
+ */
+static VALUE nuodb_connection_autocommit_get(VALUE self)
+{
+    trace("nuodb_connection_autocommit_get");
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (handle != NULL && handle->pointer != NULL)
+    {
+        try
+        {
+            bool current = handle->pointer->getAutoCommit();
+            return AS_QBOOL(current);
+        }
+        catch (SQLException & e)
+        {
+            rb_raise_nuodb_error(e.getSqlcode(), "Failed to determine autocommit state for connection: %s", e.getText());
+        }
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: connection handle nil");
+    }
+}
+
+/*
+ * call-seq:
+ *
+ *  Connection.new(key, value, ...) -> new_connection
+ *  Connection.new(key, value, ...) { |connection| block }
+ *
+ * Creates a new connection using the specified connection parameters. In the
+ * first form a new connection is created but the caller is responsible for
+ * calling disconnect. In the second form a new connection is created but the
+ * caller is not responsible for calling disconnect; the connection is
+ * automatically closed after the block exits.
+ *
+ *      NuoDB::Connection.new (
+ *          :database => 'hockey',
+ *          :username => 'gretzky',
+ *          :password => 'goal!',
+ *          :schema   => 'players')     #=> connection
+ *      NuoDB::Connection.new (
+ *          :database => 'hockey',
+ *          :username => 'gretzky',
+ *          :password => 'goal!',
+ *          :schema   => 'players') { |connection| ... }    #=> automatically disconnected connection
+ */
+static VALUE nuodb_connection_initialize(VALUE self, VALUE hash)
+{
+    trace("nuodb_connection_initialize");
+
+    if (TYPE(hash) != T_HASH)
+    {
+        rb_raise(rb_eTypeError, "wrong argument type %s (Hash expected)", rb_class2name(CLASS_OF(hash)));
+    }
+
+    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+    if (NIL_P(handle->database))
+    {
+        VALUE value = rb_hash_aref(hash, sym_database);
+        if (value == Qnil)
+        {
+            rb_raise(rb_eArgError, "missing database argument for connection: please specify :database => 'your_db_name'");
+        }
+        if (TYPE(value) != T_STRING)
+        {
+            rb_raise(rb_eTypeError, "wrong database argument type %s (String expected)", rb_class2name(CLASS_OF(value)));
+        }
+        handle->database = value;
+    }
+    if (handle->username == Qnil)
+    {
+        VALUE value = rb_hash_aref(hash, sym_username);
+        if (value == Qnil)
+        {
+            rb_raise(rb_eArgError, "missing username argument for connection: please specify :username => 'your_db_username'");
+        }
+        if (TYPE(value) != T_STRING)
+        {
+            rb_raise(rb_eTypeError, "wrong username argument type %s (String expected)", rb_class2name(CLASS_OF(value)));
+        }
+        handle->username = value;
+    }
+    if (handle->password == Qnil)
+    {
+        VALUE value = rb_hash_aref(hash, sym_password);
+        if (value == Qnil)
+        {
+            rb_raise(rb_eArgError, "missing password argument for connection: please specify :password => 'your_db_password'");
+        }
+        if (TYPE(value) != T_STRING)
+        {
+            rb_raise(rb_eTypeError, "wrong password argument type %s (String expected)", rb_class2name(CLASS_OF(value)));
+        }
+        handle->password = value;
+    }
+    if (handle->schema == Qnil)
+    {
+        VALUE value = rb_hash_aref(hash, sym_schema);
+        if (TYPE(value) != T_STRING)
+        {
+            rb_raise(rb_eTypeError, "wrong schema argument type %s (String expected)", rb_class2name(CLASS_OF(value)));
+        }
+        handle->schema = value;
+    }
+
+    internal_connection_connect_or_raise(handle);
+
+    if (!rb_block_given_p()) {
+
+        trace("nuodb_connection_initialize: no block");
+
+        return self;
+    }
+
+    trace("nuodb_connection_initialize: begin block");
+
+    int state = 0;
+    VALUE result = rb_protect(rb_yield, self, &state);
+
+    trace("nuodb_connection_initialize: end block");
+
+    // n.b. don't do this as it may introduce crashes of the ruby process !!!
+    //nuodb_connection_disconnect(self);
+
+    trace("nuodb_connection_initialize: auto disconnect");
+
+    if (state)
+    {
+        rb_jump_tag(state);
+    }
+    else
+    {
+        return result;
+    }
+
+    return Qnil;
+}
+
+///*
+// * call-seq:
+// *  tables(schema = nil) -> Results
+// *
+// * Retrieves a result set containing the tables associated to the specified schema,
+// * or if the specified schema is nil, return a result set of tables for the schema
+// * associated with the connection.
+// */
+//static VALUE nuodb_connection_tables(VALUE self, VALUE schema)
+//{
+//    trace("nuodb_connection_tables");
+//
+//    nuodb_connection_handle * handle = cast_handle<nuodb_connection_handle>(self);
+//    if (handle != NULL && handle->pointer != NULL)
+//    {
+//        if (schema == Qnil)
+//        {
+//            schema = handle->schema;
+//        }
+////        char const * sql = "SELECT tablename FROM system.tables WHERE schema = ?"
+////        try
+////        {
+////            return nuodb_result_alloc(self, handle->pointer->getGeneratedKeys());
+////        }
+////        catch (SQLException & e)
+////        {
+////            rb_raise_nuodb_error(e.getSqlcode(), "Failed to get the tables keys for the schema: %s", e.getText());
+////        }
+//    }
+//    else
+//    {
+//        rb_raise(rb_eArgError, "invalid state: connection handle nil");
+//    }
+//    return Qnil;
+//}
+
+void nuodb_define_connection_api()
+{
+    /*
+     * Document-class: NuoDB::Connection
+     *
+     * A Connection object maintains a connection to a specific database.
+     * SQL statements are executed and results are returned within the context of a
+     * connection.
+     */
+    nuodb_connection_klass = rb_define_class_under(m_nuodb, "Connection", rb_cObject);
+
+    rb_define_alloc_func(nuodb_connection_klass, nuodb_connection_alloc);
+    rb_define_method(nuodb_connection_klass, "initialize", RUBY_METHOD_FUNC(nuodb_connection_initialize), 1);
+
+    sym_username = ID2SYM(rb_intern("username"));
+    sym_password = ID2SYM(rb_intern("password"));
+    sym_database = ID2SYM(rb_intern("database"));
+    sym_schema = ID2SYM(rb_intern("schema"));
+
+    // DBI
+
+    rb_define_method(nuodb_connection_klass, "commit", RUBY_METHOD_FUNC(nuodb_connection_commit), 0);
+    //rb_define_method(nuodb_connection_klass, "disconnect", RUBY_METHOD_FUNC(nuodb_connection_disconnect), 0);
+    rb_define_method(nuodb_connection_klass, "ping", RUBY_METHOD_FUNC(nuodb_connection_ping), 0);
+    rb_define_method(nuodb_connection_klass, "prepare", RUBY_METHOD_FUNC(nuodb_connection_prepare), 1);
+    rb_define_method(nuodb_connection_klass, "rollback", RUBY_METHOD_FUNC(nuodb_connection_rollback), 0);
+    // todo add .tables, definitely!
+    // todo add .columns, or not? If we did: .columns(table_name)
+    // todo and tie this into the SchemaCache on the Ruby side.
+
+    // NUODB EXTENSIONS
+
+    //rb_define_method(nuodb_connection_klass, "tables", RUBY_METHOD_FUNC(nuodb_connection_tables), 1);
+    rb_define_method(nuodb_connection_klass, "autocommit=", RUBY_METHOD_FUNC(nuodb_connection_autocommit_set), 1);
+    rb_define_method(nuodb_connection_klass, "autocommit?", RUBY_METHOD_FUNC(nuodb_connection_autocommit_get), 0);
+    rb_define_method(nuodb_connection_klass, "statement", RUBY_METHOD_FUNC(nuodb_connection_statement), 0);
+    rb_define_method(nuodb_connection_klass, "connected?", RUBY_METHOD_FUNC(nuodb_connection_ping), 0);
+}
+
+//------------------------------------------------------------------------------
+
+/*
+ * The NuoDB package provides a Ruby interface to the NuoDB database.
+ */
 extern "C" void Init_nuodb(void)
 {
+    /*
+     * The NuoDB module contains classes and function definitions enabling use
+     * of the NuoDB database.
+     */
     m_nuodb = rb_define_module("NuoDB");
-    c_nuodb_error = rb_const_get(m_nuodb, rb_intern("Error"));
+
+    c_nuodb_error = rb_const_get(m_nuodb, rb_intern("DatabaseError"));
+
     c_error_code_assignment = rb_intern("error_code=");
 
-    WrapConnection::init(m_nuodb);
-    WrapDatabaseMetaData::init(m_nuodb);
-    WrapStatement::init(m_nuodb);
-    WrapPreparedStatement::init(m_nuodb);
-    WrapResultSet::init(m_nuodb);
-    WrapResultSetMetaData::init(m_nuodb);
+    nuodb_define_connection_api();
+
+    nuodb_define_statement_api();
+
+    nuodb_define_prepared_statement_api();
+
+    nuodb_define_result_api();
 }
