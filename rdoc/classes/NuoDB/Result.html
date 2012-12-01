@@ -1,0 +1,145 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html lang='en'>
+  <head>
+    <title>NuoDB::Result</title>
+    <meta content='text/html; charset=UTF-8' http-equiv='Content-Type'>
+    <link href='../../css/style.css' media='screen' rel='stylesheet' type='text/css'>
+    <script type='text/javascript'>
+      //<![CDATA[
+        function popupCode(url) {
+          window.open(url, "Code", "resizable=yes,scrollbars=yes,toolbar=no,status=no,height=150,width=400")
+        }
+        
+        function toggleCode(id) {
+          var code = document.getElementById(id)
+        
+          code.style.display = code.style.display != 'block' ? 'block' : 'none'
+          return true
+        }
+        
+        // Make codeblocks hidden by default
+        document.writeln('<' + 'style type="text/css">.method .source pre { display: none }<\/style>')
+      //]]>
+    </script>
+  </head>
+  <body class='page'>
+    <div class='class' id='wrapper'>
+      <div class='header'>
+        <h1 class='name'>
+          <span class='type'>class</span>
+          NuoDB::Result
+        </h1>
+        <ol class='paths'>
+          <li>
+            <a target="docwin" href="../../files/ext/nuodb/nuodb_cpp.html">ext/nuodb/nuodb.cpp</a>
+          </li>
+        </ol>
+        <div class='parent'>
+          Parent:
+          <strong><a target="docwin" href="../NuoDB.html">NuoDB</a></strong>
+        </div>
+      </div>
+      <div id='content'>
+        <div id='text'>
+          <div id='description'>
+            
+            <p>A <a href="Result.html">Result</a> object maintains a connection to a
+            specific database. SQL statements are executed and results are returned
+            within the context of a connection.</p>
+          </div>
+          <div id='method-list'>
+            <h2>Methods</h2>
+            <h3>Public Instance</h3>
+            <ol>
+              <li><a target="docwin" href="#method-i-columns">columns</a></li>
+              <li><a target="docwin" href="#method-i-each">each</a></li>
+              <li><a target="docwin" href="#method-i-rows">rows</a></li>
+            </ol>
+          </div>
+          <div id='context'>
+            <div id='includes'>
+              <h2>Included modules</h2>
+              <ol>
+                <li>Enumerable</li>
+              </ol>
+            </div>
+          </div>
+          <div id='section'>
+            <div id='methods'>
+              <h2>Public Instance methods</h2>
+              <div class='method public-instance' id='method-method-i-columns'>
+                <a name='method-i-columns'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>result.columns -> ary</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Returns an array of <a href="Column.html">Column</a> objects.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">results</span> = <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">results</span>&#x000A;<span class="ruby-operator">...</span>&#x000A;<span class="ruby-identifier">results</span>.<span class="ruby-identifier">columns</span>.<span class="ruby-identifier">each</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">column</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;#{column.name}, #{column.default}, #{column.type}, #{column.null}&quot;</span>&#x000A;<span class="ruby-keyword">end</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-columns-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-columns-source'>static VALUE&#x000A;nuodb_result_columns(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_result_columns&quot;);&#x000A;    nuodb_result_handle * handle = cast_handle&lt;nuodb_result_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        VALUE columns = rb_iv_get(self, &quot;@columns&quot;);&#x000A;        if (NIL_P(columns))&#x000A;        {&#x000A;            try&#x000A;            {&#x000A;                ResultSetMetaData * result_metadata = handle-&gt;pointer-&gt;getMetaData();&#x000A;                DatabaseMetaData * database_metadata = handle-&gt;connection-&gt;getMetaData();&#x000A;&#x000A;                VALUE array = rb_ary_new();&#x000A;                rb_require(&quot;nuodb/column&quot;);&#x000A;                VALUE column_klass = rb_const_get(m_nuodb, rb_intern(&quot;Column&quot;));&#x000A;&#x000A;                int column_count = result_metadata-&gt;getColumnCount();&#x000A;                for (int column_index = 1; column_index &lt; column_count + 1; ++column_index)&#x000A;                {&#x000A;                    char const * schema_name = result_metadata-&gt;getSchemaName(column_index);&#x000A;                    char const * table_name = result_metadata-&gt;getTableName(column_index);&#x000A;                    char const * column_name = result_metadata-&gt;getColumnName(column_index);&#x000A;&#x000A;                    // args: [name, default, sql_type, null]&#x000A;                    VALUE args[4];&#x000A;&#x000A;                    args[0] = rb_str_new2(result_metadata-&gt;getColumnLabel(column_index));&#x000A;&#x000A;                    ResultSet * database_metadata_results = database_metadata-&gt;getColumns(NULL,&#x000A;                        schema_name, table_name, column_name);&#x000A;&#x000A;                    if(database_metadata_results-&gt;next())&#x000A;                    {&#x000A;                        try&#x000A;                        {&#x000A;                            args[1] = nuodb_get_rb_value(database_metadata_results-&gt;findColumn(&quot;COLUMN_DEF&quot;),&#x000A;                                (SqlType) result_metadata-&gt;getColumnType(column_index), database_metadata_results);&#x000A;                        }&#x000A;                        catch (SQLException &amp; e)&#x000A;                        {&#x000A;                            args[1] = Qnil;&#x000A;                        }&#x000A;                    }&#x000A;                    else&#x000A;                    {&#x000A;                        args[1] = Qnil;&#x000A;                    }&#x000A;                    database_metadata_results-&gt;close();&#x000A;&#x000A;                    args[2] = nuodb_map_sql_type(result_metadata-&gt;getColumnType(column_index));&#x000A;                    args[3] = result_metadata-&gt;isNullable(column_index) ? Qtrue : Qfalse;&#x000A;&#x000A;                    VALUE column = rb_class_new_instance(4, args, column_klass);&#x000A;                    rb_ary_push(array, column);&#x000A;                }&#x000A;&#x000A;                rb_iv_set(self, &quot;@columns&quot;, array);&#x000A;&#x000A;                return array;&#x000A;            }&#x000A;            catch (SQLException &amp; e)&#x000A;            {&#x000A;                rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to create column info: %s&quot;, e.getText());&#x000A;            }&#x000A;        }&#x000A;        else&#x000A;        {&#x000A;            return columns;&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: result handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-each'>
+                <a name='method-i-each'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>result.each { |tuple| ... }</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Invokes the block for each tuple in the result set.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">connection</span>.<span class="ruby-identifier">prepare</span> <span class="ruby-identifier">select_dml</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">select</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-operator">...</span>&#x000A;    <span class="ruby-keyword">if</span> <span class="ruby-identifier">select</span>.<span class="ruby-identifier">execute</span>&#x000A;        <span class="ruby-identifier">select</span>.<span class="ruby-identifier">results</span>.<span class="ruby-identifier">each</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">row</span><span class="ruby-operator">|</span>&#x000A;            <span class="ruby-operator">...</span>&#x000A;        <span class="ruby-keyword">end</span>&#x000A;    <span class="ruby-keyword">end</span>&#x000A;<span class="ruby-keyword">end</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-each-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-each-source'>static VALUE&#x000A;nuodb_result_each(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_result_each&quot;);&#x000A;    nuodb_result_handle * handle = cast_handle&lt;nuodb_result_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        VALUE rows = rb_iv_get(self, &quot;@rows&quot;);&#x000A;        if (NIL_P(rows))&#x000A;        {&#x000A;            while (handle-&gt;pointer-&gt;next())&#x000A;            {&#x000A;                VALUE array = rb_ary_new();&#x000A;&#x000A;                NuoDB::ResultSetMetaData * metadata = handle-&gt;pointer-&gt;getMetaData();&#x000A;                int32_t column_count = metadata-&gt;getColumnCount();&#x000A;                for (int32_t column = 1; column &lt; column_count + 1; column++)&#x000A;                {&#x000A;                    SqlType type = (SqlType) metadata-&gt;getColumnType(column);&#x000A;                    rb_ary_push(array, nuodb_get_rb_value(column, type, handle-&gt;pointer));&#x000A;                }&#x000A;&#x000A;                rb_yield(array);&#x000A;            }&#x000A;        }&#x000A;        else&#x000A;        {&#x000A;            for (int i = 0; i &lt; RARRAY_LEN(rows); i++)&#x000A;            {&#x000A;                rb_yield(rb_ary_entry(rows, i));&#x000A;            }&#x000A;        }&#x000A;        return self;&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-rows'>
+                <a name='method-i-rows'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>result.rows -> ary</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Returns an array of rows, each of which is an array of values.</p>
+                  
+                  <p>Note that calling <a href="Result.html#method-i-rows">rows</a> for large
+                  result sets is sub-optimal as it will load the entire dataset into memory.
+                  Users should prefer calling <a href="Result.html#method-i-each">each</a>
+                  over <a href="Result.html#method-i-rows">rows</a>.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">results</span> = <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">results</span>&#x000A;<span class="ruby-operator">...</span>&#x000A;<span class="ruby-identifier">results</span>.<span class="ruby-identifier">rows</span>.<span class="ruby-identifier">each</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">row</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">row</span>.<span class="ruby-identifier">each</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">value</span><span class="ruby-operator">|</span>&#x000A;        <span class="ruby-identifier">puts</span> <span class="ruby-identifier">value</span>&#x000A;    <span class="ruby-keyword">end</span>&#x000A;<span class="ruby-keyword">end</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-rows-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-rows-source'>static VALUE&#x000A;nuodb_result_rows(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_result_rows&quot;);&#x000A;    nuodb_result_handle * handle = cast_handle&lt;nuodb_result_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        VALUE rows = rb_iv_get(self, &quot;@rows&quot;);&#x000A;        if (NIL_P(rows))&#x000A;        {&#x000A;            try&#x000A;            {&#x000A;                VALUE rows = rb_ary_new();&#x000A;&#x000A;                while (handle-&gt;pointer-&gt;next())&#x000A;                {&#x000A;                    VALUE row = rb_ary_new();&#x000A;&#x000A;                    NuoDB::ResultSetMetaData * metadata = handle-&gt;pointer-&gt;getMetaData();&#x000A;                    int32_t column_count = metadata-&gt;getColumnCount();&#x000A;                    for (int32_t column = 1; column &lt; column_count + 1; column++)&#x000A;                    {&#x000A;                        SqlType type = (SqlType) metadata-&gt;getColumnType(column);&#x000A;                        rb_ary_push(row, nuodb_get_rb_value(column, type, handle-&gt;pointer));&#x000A;                    }&#x000A;&#x000A;                    rb_ary_push(rows, row);&#x000A;                }&#x000A;&#x000A;                rb_iv_set(self, &quot;@rows&quot;, rows);&#x000A;&#x000A;                return rows;&#x000A;            }&#x000A;            catch (SQLException &amp; e)&#x000A;            {&#x000A;                rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to create a rows array: %s&quot;, e.getText());&#x000A;            }&#x000A;        }&#x000A;        else&#x000A;        {&#x000A;            return rows;&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: result handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id='footer-push'></div>
+    </div>
+    <div id='footer'>
+      <a target="docwin" href="http://github.com/mislav/hanna/tree/master"><strong>Hanna</strong> RDoc template</a>
+    </div>
+  </body>
+</html>

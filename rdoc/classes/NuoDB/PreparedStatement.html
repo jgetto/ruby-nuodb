@@ -1,0 +1,194 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html lang='en'>
+  <head>
+    <title>NuoDB::PreparedStatement</title>
+    <meta content='text/html; charset=UTF-8' http-equiv='Content-Type'>
+    <link href='../../css/style.css' media='screen' rel='stylesheet' type='text/css'>
+    <script type='text/javascript'>
+      //<![CDATA[
+        function popupCode(url) {
+          window.open(url, "Code", "resizable=yes,scrollbars=yes,toolbar=no,status=no,height=150,width=400")
+        }
+        
+        function toggleCode(id) {
+          var code = document.getElementById(id)
+        
+          code.style.display = code.style.display != 'block' ? 'block' : 'none'
+          return true
+        }
+        
+        // Make codeblocks hidden by default
+        document.writeln('<' + 'style type="text/css">.method .source pre { display: none }<\/style>')
+      //]]>
+    </script>
+  </head>
+  <body class='page'>
+    <div class='class' id='wrapper'>
+      <div class='header'>
+        <h1 class='name'>
+          <span class='type'>class</span>
+          NuoDB::PreparedStatement
+        </h1>
+        <ol class='paths'>
+          <li>
+            <a target="docwin" href="../../files/ext/nuodb/nuodb_cpp.html">ext/nuodb/nuodb.cpp</a>
+          </li>
+        </ol>
+        <div class='parent'>
+          Parent:
+          <strong><a target="docwin" href="../NuoDB.html">NuoDB</a></strong>
+        </div>
+      </div>
+      <div id='content'>
+        <div id='text'>
+          <div id='description'>
+            
+            <p>A <a href="PreparedStatement.html">PreparedStatement</a> object maintains a
+            connection to a specific database. SQL statements are executed and results
+            are returned within the context of a connection.</p>
+          </div>
+          <div id='method-list'>
+            <h2>Methods</h2>
+            <h3>Public Instance</h3>
+            <ol>
+              <li><a target="docwin" href="#method-i-bind_param">bind_param</a></li>
+              <li><a target="docwin" href="#method-i-bind_params">bind_params</a></li>
+              <li><a target="docwin" href="#method-i-count">count</a></li>
+              <li><a target="docwin" href="#method-i-execute">execute</a></li>
+              <li><a target="docwin" href="#method-i-generated_keys">generated_keys</a></li>
+              <li><a target="docwin" href="#method-i-results">results</a></li>
+            </ol>
+          </div>
+          <div id='context'>
+          </div>
+          <div id='section'>
+            <div id='methods'>
+              <h2>Public Instance methods</h2>
+              <div class='method public-instance' id='method-method-i-bind_param'>
+                <a name='method-i-bind_param'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>bind_param(param, value)</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Attempts to bind the value to this statement as the parameter number
+                  specified.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">connection</span>.<span class="ruby-identifier">prepare</span> <span class="ruby-identifier">insert_dml</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">statement</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">bind_param</span>(<span class="ruby-value">1</span>, <span class="ruby-string">&quot;Joe Smith&quot;</span>)&#x000A;    <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">execute</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; implicit statement.finish</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-bind_param-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-bind_param-source'>static&#x000A;VALUE nuodb_prepared_statement_bind_param(VALUE self, VALUE param, VALUE value)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_bind_param&quot;);&#x000A;&#x000A;    if (TYPE(param) != T_FIXNUM)&#x000A;    {&#x000A;        rb_raise(rb_eTypeError, &quot;index must be a number&quot;);&#x000A;    }&#x000A;    int32_t index = NUM2UINT(param);&#x000A;&#x000A;    NuoDB::PreparedStatement * statement = cast_pointer_member&lt;&#x000A;                                           nuodb_prepared_statement_handle, NuoDB::PreparedStatement&gt;(self);&#x000A;&#x000A;    try&#x000A;    {&#x000A;        switch (TYPE(value))&#x000A;        {&#x000A;        case T_FLOAT: // 0x04&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_FLOAT&quot;);&#x000A;                double real_value = NUM2DBL(value);&#x000A;                statement-&gt;setDouble(index, real_value);&#x000A;            }&#x000A;            break;&#x000A;        case T_STRING: // 0x05&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_STRING&quot;);&#x000A;                char const * real_value = RSTRING_PTR(value);&#x000A;                statement-&gt;setString(index, real_value);&#x000A;            }&#x000A;            break;&#x000A;        case T_NIL: // 0x11&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_NIL&quot;);&#x000A;                statement-&gt;setNull(index, 0);&#x000A;            }&#x000A;            break;&#x000A;        case T_TRUE: // 0x12&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_TRUE&quot;);&#x000A;                statement-&gt;setBoolean(index, true);&#x000A;            }&#x000A;            break;&#x000A;        case T_FALSE: // 0x13&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_FALSE&quot;);&#x000A;                statement-&gt;setBoolean(index, false);&#x000A;            }&#x000A;            break;&#x000A;        case T_FIXNUM: // 0x15&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_FIXNUM&quot;);&#x000A;                int64_t real_value = NUM2LONG(value);&#x000A;                statement-&gt;setLong(index, real_value);&#x000A;            }&#x000A;            break;&#x000A;        case T_DATA: // 0x22&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_DATA&quot;);&#x000A;                if (rb_obj_is_instance_of(value, rb_cTime))&#x000A;                {&#x000A;                    log(DEBUG, &quot;supported Time&quot;);&#x000A;                    VALUE sec = rb_funcall(value, rb_intern(&quot;tv_sec&quot;), 0);&#x000A;                    VALUE usec = rb_funcall(value, rb_intern(&quot;tv_usec&quot;), 0);&#x000A;                    SqlTimestamp sqlTimestamp(NUM2INT(sec), NUM2INT(usec) * 1000);&#x000A;                    statement-&gt;setTimestamp(index, &amp;sqlTimestamp);&#x000A;                    break;&#x000A;                }&#x000A;                VALUE cDate = rb_const_get(rb_cObject, rb_intern(&quot;Date&quot;));&#x000A;                if (rb_obj_is_instance_of(value, cDate))&#x000A;                {&#x000A;                    log(DEBUG, &quot;supported Date&quot;);&#x000A;                    VALUE time = rb_funcall(value, rb_intern(&quot;to_time&quot;), 0);&#x000A;                    VALUE sec = rb_funcall(time, rb_intern(&quot;tv_sec&quot;), 0);&#x000A;                    VALUE usec = rb_funcall(time, rb_intern(&quot;tv_usec&quot;), 0);&#x000A;                    SqlTimestamp sqlTimestamp(NUM2LONG(sec), NUM2INT(usec) * 1000);&#x000A;                    statement-&gt;setTimestamp(index, &amp;sqlTimestamp);&#x000A;                    break;&#x000A;                }&#x000A;                break;&#x000A;            }&#x000A;        case T_OBJECT: // 0x01&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_OBJECT&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_OBJECT&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_BIGNUM: // 0x0a&#x000A;            {&#x000A;                log(DEBUG, &quot;supported: T_BIGNUM&quot;);&#x000A;                int64_t real_value = NUM2LONG(value);&#x000A;                statement-&gt;setLong(index, real_value);&#x000A;            }&#x000A;            break;&#x000A;        case T_ARRAY: // 0x07&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_ARRAY&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_ARRAY&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_HASH: // 0x08&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_HASH&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_HASH&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_STRUCT: // 0x09&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_STRUCT&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_STRUCT&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_FILE: // 0x0e&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_FILE&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_FILE&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_MATCH: // 0x23&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_MATCH&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_MATCH&quot;, index);&#x000A;            }&#x000A;            break;&#x000A;        case T_SYMBOL: // 0x24&#x000A;            {&#x000A;                log(WARN, &quot;unsupported: T_SYMBOL&quot;);&#x000A;                raise_unsupported_type_at_index(&quot;T_SYMBOL&quot;, index);&#x000A;                break;&#x000A;            }&#x000A;            break;&#x000A;        default:&#x000A;            rb_raise(rb_eTypeError, &quot;unsupported type: %d&quot;, TYPE(value));&#x000A;            break;&#x000A;        }&#x000A;        return Qnil;&#x000A;    }&#x000A;    catch (SQLException &amp; e)&#x000A;    {&#x000A;        rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to set prepared statement parameter(%d, %lld) failed: %s&quot;,&#x000A;                             index, param, e.getText());&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-bind_params'>
+                <a name='method-i-bind_params'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>bind_params(*binds)</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Attempts to bind the list of values successively using bind_param.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">connection</span>.<span class="ruby-identifier">prepare</span> <span class="ruby-identifier">insert_dml</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">statement</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">bind_params</span>([<span class="ruby-value">56</span>, <span class="ruby-value">6.7</span>, <span class="ruby-string">&quot;String&quot;</span>, <span class="ruby-constant">Date</span>.<span class="ruby-identifier">new</span>(<span class="ruby-value">2001</span>, <span class="ruby-value">12</span>, <span class="ruby-value">3</span>), <span class="ruby-constant">Time</span>.<span class="ruby-identifier">new</span>])&#x000A;    <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">execute</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; implicit statement.finish</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-bind_params-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-bind_params-source'>static&#x000A;VALUE nuodb_prepared_statement_bind_params(VALUE self, VALUE array)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_bind_params&quot;);&#x000A;&#x000A;    nuodb_prepared_statement_handle * handle = cast_handle&lt;nuodb_prepared_statement_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        for (int i = 0; i &lt; RARRAY_LEN(array); ++i)&#x000A;        {&#x000A;            VALUE value = RARRAY_PTR(array)[i];&#x000A;            nuodb_prepared_statement_bind_param(self, UINT2NUM(i+1), value);&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: prepared statement handle nil&quot;);&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-count'>
+                <a name='method-i-count'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>count() -> Number</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Returns the update count for an update statement.</p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-count-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-count-source'>static&#x000A;VALUE nuodb_prepared_statement_update_count(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_update_count&quot;);&#x000A;&#x000A;    nuodb_prepared_statement_handle * handle = cast_handle&lt;nuodb_prepared_statement_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            return INT2NUM(handle-&gt;pointer-&gt;getUpdateCount());&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to get the update count for the prepared statement: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: prepared statement handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-execute'>
+                <a name='method-i-execute'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>execute() -> Bool</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Executes a prepared statement. Returns true if the result is a <a
+                  href="Result.html">Result</a> object; returns false if the result is an
+                  update count or there is no result. For the latter case, count() should be
+                  called next, for the former case each() should be called.</p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-execute-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-execute-source'>static&#x000A;VALUE nuodb_prepared_statement_execute(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_execute&quot;);&#x000A;&#x000A;    nuodb_prepared_statement_handle * handle = cast_handle&lt;nuodb_prepared_statement_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            return AS_QBOOL(handle-&gt;pointer-&gt;execute());&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to execute SQL prepared statement: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: prepared statement handle nil&quot;);&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-generated_keys'>
+                <a name='method-i-generated_keys'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>generated_keys() -> Results</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Retrieves a result set containing the generated keys related to the
+                  previously executed insert.</p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-generated_keys-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-generated_keys-source'>static VALUE nuodb_prepared_statement_generated_keys(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_generated_keys&quot;);&#x000A;&#x000A;    nuodb_prepared_statement_handle * handle = cast_handle&lt;nuodb_prepared_statement_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            // this hack should not have been necessary; it should never have&#x000A;            // returned null, this is a product defect.&#x000A;            ResultSet * results = handle-&gt;pointer-&gt;getGeneratedKeys();&#x000A;            if (results != NULL)&#x000A;            {&#x000A;                return nuodb_result_alloc(self, results, handle-&gt;pointer-&gt;getConnection());&#x000A;            }&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to get the generated keys for the prepared statement: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: prepared statement handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-results'>
+                <a name='method-i-results'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>results() -> Results</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Retrieves a result set containing rows for the related query.</p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-results-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-results-source'>static VALUE nuodb_prepared_statement_results(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_prepared_statement_results&quot;);&#x000A;&#x000A;    nuodb_prepared_statement_handle * handle = cast_handle&lt;nuodb_prepared_statement_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            return nuodb_result_alloc(self, handle-&gt;pointer-&gt;getResultSet(), handle-&gt;pointer-&gt;getConnection());&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to get the result set for the prepared statement: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: prepared statement handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id='footer-push'></div>
+    </div>
+    <div id='footer'>
+      <a target="docwin" href="http://github.com/mislav/hanna/tree/master"><strong>Hanna</strong> RDoc template</a>
+    </div>
+  </body>
+</html>

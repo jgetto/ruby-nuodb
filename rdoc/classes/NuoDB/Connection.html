@@ -1,0 +1,277 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html lang='en'>
+  <head>
+    <title>NuoDB::Connection</title>
+    <meta content='text/html; charset=UTF-8' http-equiv='Content-Type'>
+    <link href='../../css/style.css' media='screen' rel='stylesheet' type='text/css'>
+    <script type='text/javascript'>
+      //<![CDATA[
+        function popupCode(url) {
+          window.open(url, "Code", "resizable=yes,scrollbars=yes,toolbar=no,status=no,height=150,width=400")
+        }
+        
+        function toggleCode(id) {
+          var code = document.getElementById(id)
+        
+          code.style.display = code.style.display != 'block' ? 'block' : 'none'
+          return true
+        }
+        
+        // Make codeblocks hidden by default
+        document.writeln('<' + 'style type="text/css">.method .source pre { display: none }<\/style>')
+      //]]>
+    </script>
+  </head>
+  <body class='page'>
+    <div class='class' id='wrapper'>
+      <div class='header'>
+        <h1 class='name'>
+          <span class='type'>class</span>
+          NuoDB::Connection
+        </h1>
+        <ol class='paths'>
+          <li>
+            <a target="docwin" href="../../files/ext/nuodb/nuodb_cpp.html">ext/nuodb/nuodb.cpp</a>
+          </li>
+        </ol>
+        <div class='parent'>
+          Parent:
+          <strong><a target="docwin" href="../NuoDB.html">NuoDB</a></strong>
+        </div>
+      </div>
+      <div id='content'>
+        <div id='text'>
+          <div id='description'>
+            
+            <p>A <a href="Connection.html">Connection</a> object maintains a connection to
+            a specific database. SQL statements are executed and results are returned
+            within the context of a connection.</p>
+          </div>
+          <div id='method-list'>
+            <h2>Methods</h2>
+            <h3>Public Class</h3>
+            <ol>
+              <li><a target="docwin" href="#method-c-new">new</a></li>
+            </ol>
+            <h3>Public Instance</h3>
+            <ol>
+              <li><a target="docwin" href="#method-i-autocommit-3D">autocommit=</a></li>
+              <li><a target="docwin" href="#method-i-autocommit-3F">autocommit?</a></li>
+              <li><a target="docwin" href="#method-i-commit">commit</a></li>
+              <li><a target="docwin" href="#method-i-connected-3F">connected?</a></li>
+              <li><a target="docwin" href="#method-i-ping">ping</a></li>
+              <li><a target="docwin" href="#method-i-prepare">prepare</a></li>
+              <li><a target="docwin" href="#method-i-rollback">rollback</a></li>
+              <li><a target="docwin" href="#method-i-statement">statement</a></li>
+            </ol>
+          </div>
+          <div id='context'>
+          </div>
+          <div id='section'>
+            <div id='methods'>
+              <h2>Public Class methods</h2>
+              <div class='method public-class' id='method-method-c-new'>
+                <a name='method-c-new'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>Connection.new(key, value, ...) -> new_connection</div>
+                    <div>Connection.new(key, value, ...) { |connection| block }</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Creates a new connection using the specified connection parameters. In the
+                  first form a new connection is created but the caller is responsible for
+                  calling disconnect. In the second form a new connection is created but the
+                  caller is not responsible for calling disconnect; the connection is
+                  automatically closed after the block exits.</p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (&#x000A;    :<span class="ruby-identifier">database</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'hockey'</span>,&#x000A;    :<span class="ruby-identifier">username</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'gretzky'</span>,&#x000A;    :<span class="ruby-identifier">password</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'goal!'</span>,&#x000A;    :<span class="ruby-identifier">schema</span>   =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'players'</span>)     <span class="ruby-comment">#=&gt; connection</span>&#x000A;<span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (&#x000A;    :<span class="ruby-identifier">database</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'hockey'</span>,&#x000A;    :<span class="ruby-identifier">username</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'gretzky'</span>,&#x000A;    :<span class="ruby-identifier">password</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'goal!'</span>,&#x000A;    :<span class="ruby-identifier">schema</span>   =<span class="ruby-operator">&gt;</span> <span class="ruby-string">'players'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span> <span class="ruby-operator">...</span> }    <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-c-new-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-c-new-source'>static VALUE nuodb_connection_initialize(VALUE self, VALUE hash)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_initialize&quot;);&#x000A;&#x000A;    if (TYPE(hash) != T_HASH)&#x000A;    {&#x000A;        rb_raise(rb_eTypeError, &quot;wrong argument type %s (Hash expected)&quot;, rb_class2name(CLASS_OF(hash)));&#x000A;    }&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (NIL_P(handle-&gt;database))&#x000A;    {&#x000A;        VALUE value = rb_hash_aref(hash, sym_database);&#x000A;        if (value == Qnil)&#x000A;        {&#x000A;            rb_raise(rb_eArgError, &quot;missing database argument for connection: please specify :database =&gt; 'your_db_name'&quot;);&#x000A;        }&#x000A;        if (TYPE(value) != T_STRING)&#x000A;        {&#x000A;            rb_raise(rb_eTypeError, &quot;wrong database argument type %s (String expected)&quot;, rb_class2name(CLASS_OF(value)));&#x000A;        }&#x000A;        handle-&gt;database = value;&#x000A;    }&#x000A;    if (handle-&gt;username == Qnil)&#x000A;    {&#x000A;        VALUE value = rb_hash_aref(hash, sym_username);&#x000A;        if (value == Qnil)&#x000A;        {&#x000A;            rb_raise(rb_eArgError, &quot;missing username argument for connection: please specify :username =&gt; 'your_db_username'&quot;);&#x000A;        }&#x000A;        if (TYPE(value) != T_STRING)&#x000A;        {&#x000A;            rb_raise(rb_eTypeError, &quot;wrong username argument type %s (String expected)&quot;, rb_class2name(CLASS_OF(value)));&#x000A;        }&#x000A;        handle-&gt;username = value;&#x000A;    }&#x000A;    if (handle-&gt;password == Qnil)&#x000A;    {&#x000A;        VALUE value = rb_hash_aref(hash, sym_password);&#x000A;        if (value == Qnil)&#x000A;        {&#x000A;            rb_raise(rb_eArgError, &quot;missing password argument for connection: please specify :password =&gt; 'your_db_password'&quot;);&#x000A;        }&#x000A;        if (TYPE(value) != T_STRING)&#x000A;        {&#x000A;            rb_raise(rb_eTypeError, &quot;wrong password argument type %s (String expected)&quot;, rb_class2name(CLASS_OF(value)));&#x000A;        }&#x000A;        handle-&gt;password = value;&#x000A;    }&#x000A;    if (handle-&gt;schema == Qnil)&#x000A;    {&#x000A;        VALUE value = rb_hash_aref(hash, sym_schema);&#x000A;        if (TYPE(value) != T_STRING)&#x000A;        {&#x000A;            rb_raise(rb_eTypeError, &quot;wrong schema argument type %s (String expected)&quot;, rb_class2name(CLASS_OF(value)));&#x000A;        }&#x000A;        handle-&gt;schema = value;&#x000A;    }&#x000A;&#x000A;    internal_connection_connect_or_raise(handle);&#x000A;&#x000A;    if (!rb_block_given_p()) {&#x000A;&#x000A;        trace(&quot;nuodb_connection_initialize: no block&quot;);&#x000A;&#x000A;        return self;&#x000A;    }&#x000A;&#x000A;    trace(&quot;nuodb_connection_initialize: begin block&quot;);&#x000A;&#x000A;    int state = 0;&#x000A;    VALUE result = rb_protect(rb_yield, self, &amp;state);&#x000A;&#x000A;    trace(&quot;nuodb_connection_initialize: end block&quot;);&#x000A;&#x000A;    // n.b. don't do this as it may introduce crashes of the ruby process !!!&#x000A;    //nuodb_connection_disconnect(self);&#x000A;&#x000A;    trace(&quot;nuodb_connection_initialize: auto disconnect&quot;);&#x000A;&#x000A;    if (state)&#x000A;    {&#x000A;        rb_jump_tag(state);&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        return result;&#x000A;    }&#x000A;&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+              <h2>Public Instance methods</h2>
+              <div class='method public-instance' id='method-method-i-autocommit-3D'>
+                <a name='method-i-autocommit-3D'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>autocommit= boolean</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Sets the connections autocommit state.</p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (<span class="ruby-identifier">hash</span>) <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">autocommit</span> = <span class="ruby-keyword">false</span>&#x000A;    <span class="ruby-operator">...</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">commit</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                  
+                  <p><strong>This is a NuoDB-specific extension.</strong></p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-autocommit-3D-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-autocommit-3D-source'>static VALUE nuodb_connection_autocommit_set(VALUE self, VALUE value)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_autocommit_set&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        bool auto_commit = !(RB_TYPE_P(value, T_FALSE) || RB_TYPE_P(value, T_NIL));&#x000A;        try&#x000A;        {&#x000A;            handle-&gt;pointer-&gt;setAutoCommit(auto_commit);&#x000A;            return Qnil;&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to set autocommit (%d) for connection: %s&quot;, auto_commit, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: connection handle nil&quot;);&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-autocommit-3F'>
+                <a name='method-i-autocommit-3F'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>autocommit? -> boolean</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Gets the connections autocommit state.</p>
+                  
+                  <pre class="ruby"><span class="ruby-keyword">unless</span> <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">autocommit?</span> <span class="ruby-keyword">do</span>    <span class="ruby-comment">#=&gt; false</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">commit</span>&#x000A;<span class="ruby-keyword">end</span></pre>
+                  
+                  <p><strong>This is a NuoDB-specific extension.</strong></p>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-autocommit-3F-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-autocommit-3F-source'>static VALUE nuodb_connection_autocommit_get(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_autocommit_get&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            bool current = handle-&gt;pointer-&gt;getAutoCommit();&#x000A;            return AS_QBOOL(current);&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to determine autocommit state for connection: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: connection handle nil&quot;);&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-commit'>
+                <a name='method-i-commit'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>commit()</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Commit the database transaction.</p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (<span class="ruby-identifier">hash</span>) <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-operator">...</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">commit</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-commit-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-commit-source'>static VALUE nuodb_connection_commit(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_commit&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            handle-&gt;pointer-&gt;commit();&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to commit transaction: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: connection handle nil&quot;);&#x000A;    }&#x000A;    return Qnil;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-connected-3F'>
+                <a name='method-i-connected-3F'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>connection.ping         -> boolean</div>
+                    <div>connection.connected?   -> boolean</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Returns true if the connection is still alive, otherwise false.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">connection</span>.<span class="ruby-identifier">connected?</span>   <span class="ruby-comment">#=&gt; true</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-connected-3F-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-connected-3F-source'>static VALUE nuodb_connection_ping(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_ping&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            handle-&gt;pointer-&gt;ping();&#x000A;            return Qtrue;&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;        }&#x000A;    }&#x000A;    return Qfalse;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-ping'>
+                <a name='method-i-ping'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>connection.ping         -> boolean</div>
+                    <div>connection.connected?   -> boolean</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Returns true if the connection is still alive, otherwise false.</p>
+                  
+                  <pre class="ruby"><span class="ruby-identifier">connection</span>.<span class="ruby-identifier">connected?</span>   <span class="ruby-comment">#=&gt; true</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-ping-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-ping-source'>static VALUE nuodb_connection_ping(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_ping&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            handle-&gt;pointer-&gt;ping();&#x000A;            return Qtrue;&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;        }&#x000A;    }&#x000A;    return Qfalse;&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-prepare'>
+                <a name='method-i-prepare'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>prepare(sql) -> PreparedStatement</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Creates a prepared statement.</p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (<span class="ruby-identifier">hash</span>) <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">prepare</span> <span class="ruby-string">'insert into foo (f1,f2) values (?, ?)'</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">statement</span><span class="ruby-operator">|</span>&#x000A;        <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">bind_params</span> [<span class="ruby-operator">...</span>]&#x000A;        <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">execute</span>&#x000A;    <span class="ruby-keyword">end</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-prepare-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-prepare-source'>static VALUE nuodb_connection_prepare(VALUE self, VALUE sql)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_prepare&quot;);&#x000A;&#x000A;    return nuodb_prepared_statement_initialize(self, sql);&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-rollback'>
+                <a name='method-i-rollback'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>rollback()</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Rollback the database transaction.</p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (<span class="ruby-identifier">hash</span>) <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-operator">...</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">rollback</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-rollback-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-rollback-source'>static VALUE nuodb_connection_rollback(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_rollback&quot;);&#x000A;&#x000A;    nuodb_connection_handle * handle = cast_handle&lt;nuodb_connection_handle&gt;(self);&#x000A;    if (handle != NULL &amp;&amp; handle-&gt;pointer != NULL)&#x000A;    {&#x000A;        try&#x000A;        {&#x000A;            handle-&gt;pointer-&gt;rollback();&#x000A;            return Qnil;&#x000A;        }&#x000A;        catch (SQLException &amp; e)&#x000A;        {&#x000A;            rb_raise_nuodb_error(e.getSqlcode(), &quot;Failed to rollback transaction: %s&quot;, e.getText());&#x000A;        }&#x000A;    }&#x000A;    else&#x000A;    {&#x000A;        rb_raise(rb_eArgError, &quot;invalid state: connection handle nil&quot;);&#x000A;    }&#x000A;}</pre>
+                </div>
+              </div>
+              <div class='method public-instance' id='method-method-i-statement'>
+                <a name='method-i-statement'></a>
+                <div class='synopsis'>
+                  <span class='name'>
+                    <div>statement -> Statement</div>
+                  </span>
+                </div>
+                <div class='description'>
+                  
+                  <p>Creates a statement.</p>
+                  
+                  <p><strong>This is a NuoDB-specific extension.</strong></p>
+                  
+                  <pre class="ruby"><span class="ruby-constant">NuoDB</span><span class="ruby-operator">::</span><span class="ruby-constant">Connection</span>.<span class="ruby-identifier">new</span> (<span class="ruby-identifier">hash</span>) <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">connection</span><span class="ruby-operator">|</span>&#x000A;    <span class="ruby-identifier">connection</span>.<span class="ruby-identifier">statement</span> <span class="ruby-keyword">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">statement</span><span class="ruby-operator">|</span>&#x000A;        <span class="ruby-identifier">statement</span>.<span class="ruby-identifier">execute</span> <span class="ruby-identifier">sql</span>&#x000A;    <span class="ruby-keyword">end</span>&#x000A;<span class="ruby-keyword">end</span>  <span class="ruby-comment">#=&gt; automatically disconnected connection</span></pre>
+                </div>
+                <div class='source'>
+                  <a class='source-toggle' href='#' onclick="toggleCode('method-i-statement-source'); return false">
+                    [show source]
+                  </a>
+                  <pre id='method-i-statement-source'>static VALUE nuodb_connection_statement(VALUE self)&#x000A;{&#x000A;    trace(&quot;nuodb_connection_statement&quot;);&#x000A;&#x000A;    return nuodb_statement_initialize(self);&#x000A;}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id='footer-push'></div>
+    </div>
+    <div id='footer'>
+      <a target="docwin" href="http://github.com/mislav/hanna/tree/master"><strong>Hanna</strong> RDoc template</a>
+    </div>
+  </body>
+</html>
