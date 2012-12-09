@@ -101,8 +101,12 @@ describe NuoDB::Result do
     it "string input data types are be matched with type-specific output data types" do
       data_array.each do |binds|
         statement.execute(delete_dml).should be_false
-        string_binds = binds.inject([]) do |array, bind|
-          array << bind.to_s
+        string_binds = binds.each_with_index.inject([]) do |array, (bind, index)|
+          if [6].include? index
+            array << bind.getutc
+          else
+            array << bind.to_s
+          end
         end
         prepared_statement.bind_params string_binds
         prepared_statement.execute.should be_false

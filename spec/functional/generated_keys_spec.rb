@@ -69,6 +69,7 @@ describe NuoDB::Statement do
 
     before(:each) do
       @statement = @connection.statement
+      statement.execute(check_drop_table_ddl)
       statement.execute(create_table_ddl)
       (1..10).each do |value|
         statement.execute "INSERT INTO test_generated_keys (data) VALUES (#{value})"

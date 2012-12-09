@@ -107,7 +107,7 @@ static VALUE nuodb_result_klass;
 // ----------------------------------------------------------------------------
 // S Y M B O L S
 
-static VALUE sym_database, sym_username, sym_password, sym_schema;
+static VALUE sym_database, sym_username, sym_password, sym_schema, sym_timezone;
 
 // ----------------------------------------------------------------------------
 // B E H A V I O R S
@@ -319,6 +319,7 @@ struct nuodb_connection_handle : nuodb_handle
     VALUE username;
     VALUE password;
     VALUE schema;
+    VALUE timezone;
 
     NuoDB::Connection * pointer;
 };
@@ -679,6 +680,14 @@ VALUE nuodb_result_alloc(VALUE parent, NuoDB::ResultSet * results, NuoDB::Connec
     return Qnil;
 }
 
+static int64_t
+nuodb_get_rb_timezone_offset()
+{
+    VALUE time = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(0));
+    VALUE offset = rb_funcall(time, rb_intern("utc_offset"), 0);
+    return NUM2LONG(offset);
+}
+
 static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
@@ -753,7 +762,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             if (!results->wasNull())
             {
                 double secs = (double) field->getSeconds();
-                VALUE time = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs));
+                VALUE time = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs - nuodb_get_rb_timezone_offset()));
                 value = rb_funcall(time, rb_intern("to_date"), 0);
             }
             break;
@@ -765,7 +774,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             if (!results->wasNull())
             {
                 double secs = ((double) field->getSeconds()) + (((double) field->getNanos()) / 1000000);
-                value = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs));
+                value = rb_funcall(rb_cTime, rb_intern("at"), 1, rb_float_new(secs)); //  - nuodb_get_rb_timezone_offset()
             }
             break;
         }
@@ -1601,8 +1610,9 @@ VALUE nuodb_prepared_statement_bind_param(VALUE self, VALUE param, VALUE value)
                 {
                     log(DEBUG, "supported Time");
                     VALUE sec = rb_funcall(value, rb_intern("tv_sec"), 0);
+                    //VALUE offset = rb_funcall(value, rb_intern("utc_offset"), 0);
                     VALUE usec = rb_funcall(value, rb_intern("tv_usec"), 0);
-                    SqlTimestamp sqlTimestamp(NUM2INT(sec), NUM2INT(usec) * 1000);
+                    SqlTimestamp sqlTimestamp(NUM2INT(sec), NUM2INT(usec) * 1000); //  + NUM2INT(offset)
                     statement->setTimestamp(index, &sqlTimestamp);
                     break;
                 }
@@ -1612,8 +1622,9 @@ VALUE nuodb_prepared_statement_bind_param(VALUE self, VALUE param, VALUE value)
                     log(DEBUG, "supported Date");
                     VALUE time = rb_funcall(value, rb_intern("to_time"), 0);
                     VALUE sec = rb_funcall(time, rb_intern("tv_sec"), 0);
+                    //VALUE offset = rb_funcall(time, rb_intern("utc_offset"), 0);
                     VALUE usec = rb_funcall(time, rb_intern("tv_usec"), 0);
-                    SqlTimestamp sqlTimestamp(NUM2LONG(sec), NUM2INT(usec) * 1000);
+                    SqlTimestamp sqlTimestamp(NUM2LONG(sec), NUM2INT(usec) * 1000);//  + NUM2INT(offset)
                     statement->setTimestamp(index, &sqlTimestamp);
                     break;
                 }
@@ -1947,6 +1958,7 @@ VALUE nuodb_connection_alloc(VALUE klass)
     handle->username = Qnil;
     handle->password = Qnil;
     handle->schema = Qnil;
+    handle->timezone = Qnil;
 
     handle->free_func = RUBY_DATA_FUNC(&nuodb_connection_free);
     handle->atomic = 0;
@@ -1973,6 +1985,10 @@ void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
             props->putValue("user", StringValuePtr(handle->username));
             props->putValue("password", StringValuePtr(handle->password));
             props->putValue("schema", StringValuePtr(handle->schema));
+            if (!NIL_P(handle->timezone))
+            {
+                props->putValue("TimeZone", StringValuePtr(handle->timezone));
+            }
             handle->pointer->openDatabase(StringValuePtr(handle->database), props);
         }
         catch (SQLException & e)
@@ -1993,6 +2009,14 @@ void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
             Properties * props = handle->pointer->allocProperties();
             props->putValue("user", StringValuePtr(handle->username));
             props->putValue("password", StringValuePtr(handle->password));
+            if (NIL_P(handle->timezone))
+            {
+                props->putValue("TimeZone", "UTC");
+            }
+            else
+            {
+                props->putValue("TimeZone", StringValuePtr(handle->timezone));
+            }
             handle->pointer->openDatabase(StringValuePtr(handle->database), props);
         }
         catch (SQLException & e)
@@ -2346,6 +2370,18 @@ static VALUE nuodb_connection_initialize(VALUE self, VALUE hash)
         }
         handle->schema = value;
     }
+    if (handle->timezone == Qnil)
+    {
+        VALUE value = rb_hash_aref(hash, sym_timezone);
+        if (value != Qnil)
+        {
+            if (TYPE(value) != T_STRING)
+            {
+                rb_raise(rb_eTypeError, "wrong timezone argument type %s (String expected)", rb_class2name(CLASS_OF(value)));
+            }
+            handle->timezone = value;
+        }
+    }
 
     internal_connection_connect_or_raise(handle);
 
@@ -2434,6 +2470,7 @@ void nuodb_define_connection_api()
     sym_password = ID2SYM(rb_intern("password"));
     sym_database = ID2SYM(rb_intern("database"));
     sym_schema = ID2SYM(rb_intern("schema"));
+    sym_timezone = ID2SYM(rb_intern("timezone"));
 
     // DBI
 

@@ -6,4 +6,5 @@ connections:
     username: 'cloud'
     password: 'user'
     schema:   'test'
+    #timezone: 'UTC'
 

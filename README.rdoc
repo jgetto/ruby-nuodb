@@ -24,6 +24,7 @@ Or from the source tree:
 Start up a minimal chorus as follows:
 
     java -jar ${NUODB_ROOT}/jar/nuoagent.jar --broker &
+    ${NUODB_ROOT}/bin/nuodb --chorus test --password bar --dba-user dba --dba-password baz --verbose debug --archive /var/tmp/nuodb --initialize --force &
     ${NUODB_ROOT}/bin/nuodb --chorus test --password bar --dba-user dba --dba-password baz &
 
 Create a user in the database:
