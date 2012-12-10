@@ -128,13 +128,9 @@ namespace :nuodb do
   end
 
   task :start_server do
-    #config = KeymapTest.config['connections']['redis']
-    #puts %x( echo "daemonize yes\nport #{config['test']['port']}\ndir #{File.dirname(__FILE__)}" | redis-server - )
   end
 
   task :stop_server do
-    #config = KeymapTest.config['connections']['redis']
-    #puts %x( redis-cli -p #{config['test']['port']} shutdown )
   end
 
   task :restart_server => [:stop_server, :start_server, :create_user]
