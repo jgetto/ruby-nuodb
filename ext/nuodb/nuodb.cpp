@@ -126,7 +126,7 @@ enum LogLevel
     INFO,
     TRACE,
     DEBUG,
-    NONE,
+    NONE
 };
 
 static LogLevel logLevel = NONE;
@@ -925,7 +925,7 @@ nuodb_result_rows(VALUE self)
         {
             try
             {
-                VALUE rows = rb_ary_new();
+                rows = rb_ary_new();
 
                 while (handle->pointer->next())
                 {
@@ -943,18 +943,13 @@ nuodb_result_rows(VALUE self)
                 }
 
                 rb_iv_set(self, "@rows", rows);
-
-                return rows;
             }
             catch (SQLException & e)
             {
                 rb_raise_nuodb_error(e.getSqlcode(), "Failed to create a rows array: %s", e.getText());
             }
         }
-        else
-        {
-            return rows;
-        }
+        return rows;
     }
     else
     {
@@ -1012,6 +1007,7 @@ nuodb_result_each(VALUE self)
         }
         return self;
     }
+    return Qnil;
 }
 
 static
@@ -1159,8 +1155,6 @@ VALUE nuodb_statement_initialize(VALUE parent)
 
         nuodb_statement_handle * handle = ALLOC(nuodb_statement_handle);
 
-        nuodb_handle * base = handle;
-
         handle->free_func = RUBY_DATA_FUNC(&nuodb_statement_free);
         handle->atomic = 0;
         handle->parent = parent;
@@ -1238,6 +1232,7 @@ VALUE nuodb_statement_execute(VALUE self, VALUE sql)
     {
         rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
     }
+    return Qnil;
 }
 
 /*
@@ -1688,13 +1683,13 @@ VALUE nuodb_prepared_statement_bind_param(VALUE self, VALUE param, VALUE value)
             rb_raise(rb_eTypeError, "unsupported type: %d", TYPE(value));
             break;
         }
-        return Qnil;
     }
     catch (SQLException & e)
     {
         rb_raise_nuodb_error(e.getSqlcode(), "Failed to set prepared statement parameter(%d, %lld) failed: %s",
                              index, param, e.getText());
     }
+    return Qnil;
 }
 
 /*
@@ -1726,6 +1721,7 @@ VALUE nuodb_prepared_statement_bind_params(VALUE self, VALUE array)
     {
         rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
     }
+    return Qnil;
 }
 
 /*
@@ -1758,6 +1754,7 @@ VALUE nuodb_prepared_statement_execute(VALUE self)
     {
         rb_raise(rb_eArgError, "invalid state: prepared statement handle nil");
     }
+    return Qnil;
 }
 
 /*
@@ -1976,7 +1973,7 @@ VALUE nuodb_connection_alloc(VALUE klass)
     return Data_Wrap_Struct(klass, nuodb_connection_mark, nuodb_connection_decr_reference_count, handle);
 }
 
-void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
+    void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
 {
     trace("internal_connection_connect_or_raise");
 
@@ -2207,7 +2204,6 @@ static VALUE nuodb_connection_rollback(VALUE self)
         try
         {
             handle->pointer->rollback();
-            return Qnil;
         }
         catch (SQLException & e)
         {
@@ -2218,6 +2214,7 @@ static VALUE nuodb_connection_rollback(VALUE self)
     {
         rb_raise(rb_eArgError, "invalid state: connection handle nil");
     }
+    return Qnil;
 }
 
 /*
@@ -2245,7 +2242,6 @@ static VALUE nuodb_connection_autocommit_set(VALUE self, VALUE value)
         try
         {
             handle->pointer->setAutoCommit(auto_commit);
-            return Qnil;
         }
         catch (SQLException & e)
         {
@@ -2256,6 +2252,7 @@ static VALUE nuodb_connection_autocommit_set(VALUE self, VALUE value)
     {
         rb_raise(rb_eArgError, "invalid state: connection handle nil");
     }
+    return Qnil;
 }
 
 /*
@@ -2291,6 +2288,7 @@ static VALUE nuodb_connection_autocommit_get(VALUE self)
     {
         rb_raise(rb_eArgError, "invalid state: connection handle nil");
     }
+    return Qnil;
 }
 
 /*
