@@ -2010,11 +2010,7 @@ VALUE nuodb_connection_alloc(VALUE klass)
             Properties * props = handle->pointer->allocProperties();
             props->putValue("user", StringValuePtr(handle->username));
             props->putValue("password", StringValuePtr(handle->password));
-            if (NIL_P(handle->timezone))
-            {
-                props->putValue("TimeZone", "UTC");
-            }
-            else
+            if (!NIL_P(handle->timezone))
             {
                 props->putValue("TimeZone", StringValuePtr(handle->timezone));
             }
