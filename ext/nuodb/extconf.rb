@@ -36,7 +36,7 @@ nuodb_lib64 = nil
 
 if ENV['MAINTAINER_MODE']
   $stderr.puts "Maintainer mode enabled."
-  warning_flags = %w(-Wall -fstack-protector-all -g -g -ggdb -pedantic -Wshadow -Wpointer-arith -Wno-format-zero-length -fno-strict-aliasing -fno-builtin -Wcast-qual -Wcast-align -fstrict-aliasing -Wno-long-long  -Wwrite-strings)
+  warning_flags = %w(-Wall -fstack-protector-all -g -g -ggdb -pedantic -Wshadow -Wpointer-arith -fno-strict-aliasing -fno-builtin -Wcast-qual -Wcast-align -fstrict-aliasing -Wno-long-long  -Wwrite-strings)
   warning_flags.inject($CFLAGS) do |flags, option|
     flags << " #{option}"
   end

@@ -362,7 +362,6 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
 
     if (handle != 0)
     {
-        nuodb_handle * parent = handle->parent_handle;
         int parent_count = -10;
         if (handle->parent_handle != 0)
         {
@@ -371,6 +370,7 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
         if (logLevel <= DEBUG)
         {
 #if defined(__APPLE__)
+            nuodb_handle * parent = handle->parent_handle;
             printf("[REFERENCE COUNT][%s] (%s @ %016" PRIxPTR "): %d (%s @ %016" PRIxPTR "): %d\n",
                 context, demangle(typeid(*handle).name()), (uintptr_t) handle,
                     handle->atomic, demangle(typeid(*parent).name()), (uintptr_t) parent, parent_count);
