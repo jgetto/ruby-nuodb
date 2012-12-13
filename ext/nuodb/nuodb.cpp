@@ -1973,7 +1973,7 @@ VALUE nuodb_connection_alloc(VALUE klass)
     return Data_Wrap_Struct(klass, nuodb_connection_mark, nuodb_connection_decr_reference_count, handle);
 }
 
-    void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
+static void internal_connection_connect_or_raise(nuodb_connection_handle * handle)
 {
     trace("internal_connection_connect_or_raise");
 
