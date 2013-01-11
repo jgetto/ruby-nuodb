@@ -1220,7 +1220,7 @@ VALUE nuodb_statement_execute(VALUE self, VALUE sql)
     {
         try
         {
-            return AS_QBOOL(handle->pointer->execute(StringValuePtr(sql),
+            return AS_QBOOL(handle->pointer->execute(StringValueCStr(sql),
                 NuoDB::RETURN_GENERATED_KEYS));
         }
         catch (SQLException & e)
@@ -1476,7 +1476,7 @@ VALUE nuodb_prepared_statement_initialize(VALUE parent, VALUE sql)
         NuoDB::PreparedStatement * statement = NULL;
         try
         {
-            statement = parent_handle->pointer->prepareStatement(StringValuePtr(sql),
+            statement = parent_handle->pointer->prepareStatement(StringValueCStr(sql),
                     NuoDB::RETURN_GENERATED_KEYS);
         }
         catch (SQLException & e)
@@ -1983,22 +1983,22 @@ static void internal_connection_connect_or_raise(nuodb_connection_handle * handl
         {
             handle->pointer = Connection::create();
             Properties * props = handle->pointer->allocProperties();
-            props->putValue("user", StringValuePtr(handle->username));
-            props->putValue("password", StringValuePtr(handle->password));
-            props->putValue("schema", StringValuePtr(handle->schema));
+            props->putValue("user", StringValueCStr(handle->username));
+            props->putValue("password", StringValueCStr(handle->password));
+            props->putValue("schema", StringValueCStr(handle->schema));
             if (!NIL_P(handle->timezone))
             {
-                props->putValue("TimeZone", StringValuePtr(handle->timezone));
+                props->putValue("TimeZone", StringValueCStr(handle->timezone));
             }
-            handle->pointer->openDatabase(StringValuePtr(handle->database), props);
+            handle->pointer->openDatabase(StringValueCStr(handle->database), props);
         }
         catch (SQLException & e)
         {
             rb_raise_nuodb_error(e.getSqlcode(),
                                  "Failed to create database connection (\"%s\", \"%s\", ********, \"%s\"): %s",
-                                 StringValuePtr(handle->database),
-                                 StringValuePtr(handle->username),
-                                 StringValuePtr(handle->schema),
+                                 StringValueCStr(handle->database),
+                                 StringValueCStr(handle->username),
+                                 StringValueCStr(handle->schema),
                                  e.getText());
         }
     }
@@ -2008,20 +2008,20 @@ static void internal_connection_connect_or_raise(nuodb_connection_handle * handl
         {
             handle->pointer = Connection::create();
             Properties * props = handle->pointer->allocProperties();
-            props->putValue("user", StringValuePtr(handle->username));
-            props->putValue("password", StringValuePtr(handle->password));
+            props->putValue("user", StringValueCStr(handle->username));
+            props->putValue("password", StringValueCStr(handle->password));
             if (!NIL_P(handle->timezone))
             {
-                props->putValue("TimeZone", StringValuePtr(handle->timezone));
+                props->putValue("TimeZone", StringValueCStr(handle->timezone));
             }
-            handle->pointer->openDatabase(StringValuePtr(handle->database), props);
+            handle->pointer->openDatabase(StringValueCStr(handle->database), props);
         }
         catch (SQLException & e)
         {
             rb_raise_nuodb_error(e.getSqlcode(),
                                  "Failed to create database connection (\"%s\", \"%s\", ********): %s",
-                                 StringValuePtr(handle->database),
-                                 StringValuePtr(handle->username),
+                                 StringValueCStr(handle->database),
+                                 StringValueCStr(handle->username),
                                  e.getText());
         }
     }

@@ -13,11 +13,11 @@ To compile and test run this command:
 
 == INSTALLING THE GEM
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-1.0.0.rc.2.gem
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-1.0.0.gem
 
 Or from the source tree:
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-1.0.0.rc.2.gem
+    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-1.0.0.gem
 
 == TESTING THE GEM
 
@@ -43,25 +43,25 @@ Run the tests:
 
 Tag the product using tags per the SemVer specification; our tags have a v-prefix:
 
-    git tag -a v1.0.0-rc.2 -m "SemVer Version: v1.0.0-rc.2"
+    git tag -a v1.0.0 -m "SemVer Version: v1.0.0"
 
 If you make a mistake, take it back quickly:
 
-    git tag -d v1.0.0-rc.2
-    git push origin :refs/tags/v1.0.0-rc.2
+    git tag -d v1.0.0
+    git push origin :refs/tags/v1.0.0
 
 ===PUBLISHING
 
 Here are the commands used to publish:
 
-    gem push pkg/nuodb-1.0.0.rc.2.gem
+    gem push pkg/nuodb-1.0.0.gem
 
 == INSPECTING THE GEM
 
 It is often useful to inspect the contents of a Gem before distribution.
 To do this you dump the contents of a gem thus:
 
-    gem unpack pkg/nuodb-1.0.0.rc.2.gem
+    gem unpack pkg/nuodb-1.0.0.gem
 
 == INSPECTING THE EXPORTED SYMBOLS
 
