@@ -1,0 +1,15 @@
+language: ruby
+script: bundle install rake install
+rvm:
+  - 1.9.3
+notifications:
+  recipients:
+    - buck.robert.j@gmail.com
+branches:
+  only:
+    master
+env:
+  global:
+    NUODB_ROOT=/opt/nuodb
+before_install:
+	- ./install-nuodb.sh
