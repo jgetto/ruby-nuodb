@@ -126,8 +126,28 @@ namespace :nuodb do
 
   task :install do
     unless ENV['NUODB_ROOT'].nil?
-      puts %x(wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb)
-      puts %x(sudo dpkg -i /var/tmp/nuodb.deb)
+      case RUBY_PLATFORM
+        when /linux/i
+          unless File.exists? '/etc/redhat-release'
+            puts %x(wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb)
+            puts %x(sudo dpkg -i /var/tmp/nuodb.deb)
+          end
+        else
+          puts "Unsupported platform '#{RUBY_PLATFORM}'. Supported platforms are BSD, DARWIN, SOLARIS, and LINUX."
+      end
+    end
+  end
+
+  task :remove do
+    unless ENV['NUODB_ROOT'].nil?
+      case RUBY_PLATFORM
+        when /linux/i
+          unless File.exists? '/etc/redhat-release'
+            puts %x(sudo dpkg -r nuodb)
+          end
+        else
+          puts "Unsupported platform '#{RUBY_PLATFORM}'. Supported platforms are BSD, DARWIN, SOLARIS, and LINUX."
+      end
     end
   end
 
