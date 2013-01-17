@@ -1,5 +1,4 @@
 language: ruby
-script: bundle install rake nuodb:install install nuodb:remove
 rvm:
   - 1.9.3
 notifications:
@@ -11,3 +10,4 @@ branches:
 env:
   global:
     NUODB_ROOT=/opt/nuodb
+script: bundle exec rake nuodb:install install nuodb:remove
