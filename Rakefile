@@ -123,6 +123,14 @@ file "lib/#{name}/#{name}.#{so_ext}" => Dir.glob("ext/#{name}/*{.rb,.cpp}") do
 end
 
 namespace :nuodb do
+
+  task :install do
+    unless ENV['NUODB_ROOT'].nil?
+      puts %x(wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb)
+      puts %x(sudo dpkg -i /var/tmp/nuodb.deb)
+    end
+  end
+
   task :create_user do
     #puts %x( echo "create user arunit password 'arunit';" | nuosql arunit@localhost --user dba --password baz )
   end
