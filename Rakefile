@@ -125,7 +125,7 @@ end
 namespace :nuodb do
 
   task :install do
-    unless ENV['NUODB_ROOT'].nil?
+    if ENV['NUODB_ROOT'].nil?
       case RUBY_PLATFORM
         when /linux/i
           unless File.exists? '/etc/redhat-release'
@@ -139,7 +139,7 @@ namespace :nuodb do
   end
 
   task :remove do
-    unless ENV['NUODB_ROOT'].nil?
+    if ENV['NUODB_ROOT'].nil?
       case RUBY_PLATFORM
         when /linux/i
           unless File.exists? '/etc/redhat-release'
