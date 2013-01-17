@@ -1,5 +1,9 @@
 = NuoDB/Ruby Interface
 
+{<img src="https://secure.travis-ci.org/nuodb/ruby-nuodb.png?branch=master" alt="Continuous Integration Status" />}[http://travis-ci.org/nuodb/ruby-nuodb]
+{<img src="https://gemnasium.com/nuodb/ruby-nuodb.png?travis" alt="Dependency Status" />}[https://gemnasium.com/nuodb/ruby-nuodb]
+{<img src="https://codeclimate.com/badge.png" alt="Code Climate" />}[https://codeclimate.com/github/nuodb/ruby-nuodb]
+
 == DESCRIPTION
 
 This is the official Ruby Gem for NuoDB. It is written as a Ruby extension that
