@@ -1,13 +1,19 @@
 language: ruby
+
 rvm:
   - 1.9.3
+
 env:
   - NUODB_ROOT=/opt/nuodb
+
 notifications:
   recipients:
     - buck.robert.j@gmail.com
     - rbuck@nuodb.com
+
+before_script:
+  - wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb
+  - sudo dpkg -i /var/tmp/nuodb.deb
+
 script:
-  - NUODB_ROOT=/opt/nuodb bundle exec rake nuodb:install
   - NUODB_ROOT=/opt/nuodb bundle exec rake test install
-  - NUODB_ROOT=/opt/nuodb bundle exec rake nuodb:remove
