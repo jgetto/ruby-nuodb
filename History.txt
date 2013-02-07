@@ -1,3 +1,8 @@
+=== 1.0.1
+
+- Fixed rpath entries on linux and solaris so that customers don't need to
+  set LD_LIBRARY_PATH.
+
 === 1.0.0
 
 First release of the NuoDB API gem.
