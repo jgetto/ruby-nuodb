@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2012, NuoDB, Inc.
+# Copyright (c) 2012 - 2013, NuoDB, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -152,10 +152,10 @@ case RUBY_PLATFORM
         $LDFLAGS << " -Xlinker -rpath -Xlinker #{nuodb_lib64}"
       when /linux/i
         # extras here...
-        $LDFLAGS << " -Wl,-rpath,'$$ORIGIN'"
+        $LDFLAGS << " -Wl,-rpath,'$$ORIGIN' -Wl,-rpath,'#{nuodb_lib64}'"
       when /solaris|sunos/i
         # extras here...
-        $LDFLAGS << " -Wl,-rpath,'$$ORIGIN' -m64"
+        $LDFLAGS << " -Wl,-rpath,'$$ORIGIN' -Wl,-rpath,'#{nuodb_lib64}' -m64"
       else
         puts
     end
