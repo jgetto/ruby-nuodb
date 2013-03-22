@@ -1,4 +1,4 @@
-= NuoDB/Ruby Interface
+## NuoDB - Ruby
 
 {<img src="https://api.travis-ci.org/nuodb/ruby-nuodb.png?branch=master" alt="Build Status" />}[http://travis-ci.org/nuodb/ruby-nuodb]
 {<img src="https://gemnasium.com/nuodb/ruby-nuodb.png?travis" alt="Dependency Status" />}[https://gemnasium.com/nuodb/ruby-nuodb]
