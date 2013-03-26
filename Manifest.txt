@@ -1,7 +1,7 @@
 COPYING
 History.txt
 Manifest.txt
-README.rdoc
+README.md
 Rakefile
 ext/nuodb/extconf.rb
 ext/nuodb/nuodb.cpp
