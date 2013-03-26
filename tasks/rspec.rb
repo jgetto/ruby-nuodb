@@ -1,7 +1,7 @@
 require 'rubygems'
 require 'rake'
 
-GEM_ROOT ||= File.expand_path(File.join(File.dirname(__FILE__), ".."))
+GEM_ROOT = File.expand_path(File.join(File.dirname(__FILE__), ".."))
 
 begin
 
@@ -30,10 +30,10 @@ begin
   namespace :spec do
     desc "Run all specs in spec directory with RCov"
     RSpec::Core::RakeTask.new(:cov) do |t|
-      require 'simplecov'
-      SimpleCov.start do
-        add_group 'Libraries', 'lib'
-      end
+      #require 'simplecov'
+      #SimpleCov.start do
+      #  add_group 'Libraries', 'lib'
+      #end
     end
 
     desc "Print Specdoc for all specs"
