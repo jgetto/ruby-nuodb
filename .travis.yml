@@ -1,7 +1,10 @@
 language: ruby
 
 rvm:
+  - 2.0.0
   - 1.9.3
+  - 1.9.2
+  - 1.8.7
 
 env:
   - NUODB_ROOT=/opt/nuodb
@@ -12,11 +15,10 @@ notifications:
     - rbuck@nuodb.com
 
 before_script:
-  - wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb
-  - sudo dpkg -i /var/tmp/nuodb.deb
+  - make install
 
 script:
-  - NUODB_ROOT=/opt/nuodb make all
+  - make all
 
 after_script:
-  - sudo dpkg -r nuodb
+  - make uninstall

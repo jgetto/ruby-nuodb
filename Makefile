@@ -31,20 +31,23 @@ TESTS=$(shell find test -name "*.rb")
 all:
 	make deps
 	make build
-	make install
 
 deps:
 	bundle install
 	bundle show
 
 build:
-	rake clean build rdoc spec
+	rake clean build rdoc spec test
 
 install:
+	wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb
+	sudo dpkg -i /var/tmp/nuodb.deb
 
-rebuild:
+uninstall:
+	sudo dpkg -r nuodb
 
 clean:
+	rm -rf pkg
 
 test:
 	rspec $(TESTS)
