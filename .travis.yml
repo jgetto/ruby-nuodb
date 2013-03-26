@@ -16,7 +16,7 @@ before_script:
   - sudo dpkg -i /var/tmp/nuodb.deb
 
 script:
-  - NUODB_ROOT=/opt/nuodb bundle exec rake test install
+  - NUODB_ROOT=/opt/nuodb make all
 
 after_script:
   - sudo dpkg -r nuodb
