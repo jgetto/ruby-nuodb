@@ -36,6 +36,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <typeinfo>
+#include <stdarg.h>
 
 #define HAVE_CXA_DEMANGLE
 
@@ -176,7 +177,7 @@ static void print_address(char const * context, void * address)
     if (DEBUG >= logLevel)
     {
 #if defined(__APPLE__)
-        printf("%s: %016" PRIxPTR "\n", context, (uintptr_t) address);
+      //printf("%s: %016" PRIxPTR "\n", context, (uintptr_t) address);
 #endif
     }
 }
@@ -371,9 +372,9 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
         {
 #if defined(__APPLE__)
             nuodb_handle * parent = handle->parent_handle;
-            printf("[REFERENCE COUNT][%s] (%s @ %016" PRIxPTR "): %d (%s @ %016" PRIxPTR "): %d\n",
+            /*printf("[REFERENCE COUNT][%s] (%s @ %016" PRIxPTR "): %d (%s @ %016" PRIxPTR "): %d\n",
                 context, demangle(typeid(*handle).name()), (uintptr_t) handle,
-                    handle->atomic, demangle(typeid(*parent).name()), (uintptr_t) parent, parent_count);
+		handle->atomic, demangle(typeid(*parent).name()), (uintptr_t) parent, parent_count);*/
 #endif
         }
     }

@@ -26,7 +26,7 @@
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-TESTS=$(shell find test -name "*.rb")
+TESTS=$(shell find test -name "*_spec.rb")
 
 all:
 	make deps
@@ -37,7 +37,7 @@ deps:
 	bundle show
 
 build:
-	rake clean build rdoc spec test
+	rake clean build rdoc spec
 
 install:
 	wget http://www.nuodb.com/latest/nuodb-1.0-GA.linux.x86_64.deb --output-document=/var/tmp/nuodb.deb
@@ -50,6 +50,6 @@ clean:
 	rm -rf pkg
 
 test:
-	rspec $(TESTS)
+	ruby -S rspec $(TESTS)
 
 .PHONY: all deps build install rebuild clean test
