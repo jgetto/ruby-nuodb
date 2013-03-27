@@ -182,7 +182,7 @@ task :build do
 end
 
 task :install => :build do
-  sh %{gem install pkg/#{name}-#{version}}
+  sh %{gem install pkg/#{name}-#{version}.gem}
 end
 
 task :uninstall do
