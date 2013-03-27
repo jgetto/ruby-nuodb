@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency('erubis', '~> 2.7.0')
   spec.add_development_dependency('rake', '~> 10.0.3')
-  spec.add_development_dependency('rdoc', '~> 3.10')
+  spec.add_development_dependency('rdoc', '~> 4.0.0')
   spec.add_development_dependency('hanna-nouveau', '~> 0.2.4')
 
   %w(rake rdoc simplecov hanna-nouveau rubydoc sdoc).each { |gem| spec.add_development_dependency gem }
