@@ -1,6 +1,6 @@
 = Ruby/NuoDB Interface {<img src="https://api.travis-ci.org/nuodb/ruby-nuodb.png?branch=master" alt="Build Status" />}[http://travis-ci.org/nuodb/ruby-nuodb] {<img src="https://gemnasium.com/nuodb/ruby-nuodb.png?travis" alt="Dependency Status" />}[https://gemnasium.com/nuodb/ruby-nuodb] {<img src="https://codeclimate.com/github/nuodb/ruby-nuodb.png" />}[https://codeclimate.com/github/nuodb/ruby-nuodb]
 
-This is the official Ruby Gem for NuoDB. It wraps the NuoDB C++ API, providing a natural API for Ruby.
+This is the official Ruby Gem for {NuoDB}[http://www.nuodb.com/]. It wraps the NuoDB C++ API, providing a natural API for Ruby.
 
 To use NuoDB with Rails you will also want the {ActiveRecord NuoDB Adapter}[https://github.com/nuodb/ruby-activerecord-nuodb-adapter]
 
