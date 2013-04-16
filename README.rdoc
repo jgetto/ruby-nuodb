@@ -1,80 +1,36 @@
-= NuoDB/Ruby Interface
+= Ruby/NuoDB Interface {<img src="https://api.travis-ci.org/nuodb/ruby-nuodb.png?branch=master" alt="Build Status" />}[http://travis-ci.org/nuodb/ruby-nuodb] {<img src="https://gemnasium.com/nuodb/ruby-nuodb.png?travis" alt="Dependency Status" />}[https://gemnasium.com/nuodb/ruby-nuodb] {<img src="https://codeclimate.com/github/nuodb/ruby-nuodb.png" />}[https://codeclimate.com/github/nuodb/ruby-nuodb]
 
-{<img src="https://api.travis-ci.org/nuodb/ruby-nuodb.png?branch=master" alt="Build Status" />}[http://travis-ci.org/nuodb/ruby-nuodb]
-{<img src="https://gemnasium.com/nuodb/ruby-nuodb.png?travis" alt="Dependency Status" />}[https://gemnasium.com/nuodb/ruby-nuodb]
-{<img src="https://codeclimate.com/github/nuodb/ruby-nuodb.png" />}[https://codeclimate.com/github/nuodb/ruby-nuodb]
+This is the official Ruby Gem for NuoDB. It wraps the NuoDB C++ API, providing a natural API for Ruby.
 
-== DESCRIPTION
+To use NuoDB with Rails you will also want the {ActiveRecord NuoDB Adapter}[https://github.com/nuodb/ruby-activerecord-nuodb-adapter]
 
-This is the official Ruby Gem for NuoDB. It is written as a Ruby extension that
-wraps the NuoDB C++ API, providing a natural API for Ruby developers.
+Note: At this time the Ruby/NuoDB Interface does not support Windows.
 
-== BUILDING THE GEM
+== Getting Started
 
-To compile and test run this command:
+1. If you haven't already, {Download and Install NuoDB}[http://nuodb.com/download-nuodb/]
 
-    rake clean build rdoc spec
+2. Install the gem
 
-== INSTALLING THE GEM
+    gem install nuodb
+    
+3. Use NuoDB in Ruby
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install nuodb-1.0.1.gem
+    require "nuodb"
 
-Or from the source tree:
+    conn = NuoDB::Connection.new(:database => 'test@localhost', :username => 'dba', :password => 'goalie', :schema => 'hockey')
+    stmt = conn.statement
+    stmt.execute("SELECT * FROM hockey")
+    stmt.results.each do |res|
+        puts res.inspect
+    end
 
-    NUODB_ROOT=/Users/rbuck/tmp/nuodb gem install pkg/nuodb-1.0.1.gem
+== More Information
 
-== TESTING THE GEM
+* {Ruby/NuoDB Interface Rdoc}[http://nuodb.github.io/ruby-nuodb/rdoc/]
+* {NuoDB Community Forum}[http://www.nuodb.com/community/forum.php]
+* {NuoDB Online Documentation}[http://www.nuodb.com/community/documentation.php]
 
-Start up a minimal chorus as follows:
+== Contributing
 
-    java -jar ${NUODB_ROOT}/jar/nuoagent.jar --broker &
-    ${NUODB_ROOT}/bin/nuodb --chorus test --password bar --dba-user dba --dba-password baz --verbose debug --archive /var/tmp/nuodb --initialize --force &
-    ${NUODB_ROOT}/bin/nuodb --chorus test --password bar --dba-user dba --dba-password baz &
-
-Create a user in the database:
-
-    ${NUODB_ROOT}/bin/nuosql test@localhost --user dba --password baz
-    > create user cloud password 'user';
-    > exit
-
-Run the tests:
-
-    rake spec
-
-== PUBLISHING THE GEM
-
-=== TAGGING
-
-Tag the product using tags per the SemVer specification; our tags have a v-prefix:
-
-    git tag -a v1.0.1 -m "SemVer Version: v1.0.1"
-
-If you make a mistake, take it back quickly:
-
-    git tag -d v1.0.1
-    git push origin :refs/tags/v1.0.1
-
-===PUBLISHING
-
-Here are the commands used to publish:
-
-    gem push pkg/nuodb-1.0.1.gem
-
-== INSPECTING THE GEM
-
-It is often useful to inspect the contents of a Gem before distribution.
-To do this you dump the contents of a gem thus:
-
-    gem unpack pkg/nuodb-1.0.1.gem
-
-== INSPECTING THE EXPORTED SYMBOLS
-
-To inspec the symbols on Linux:
-
-    nm -gU ext/nuodb/nuodb.bundle
-
-To inspec the symbols on Mac:
-
-    otool -l ext/nuodb/nuodb.bundle
-
-== REFERENCES
+See {Contribution}[link:CONTRIBUTION.rdoc] for information about contributing to the Ruby ActiveRecord NuoDB Adapter.
