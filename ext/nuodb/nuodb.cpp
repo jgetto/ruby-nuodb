@@ -175,9 +175,14 @@ static void print_address(char const * context, void * address)
 {
     if (DEBUG >= logLevel)
     {
-#if defined(__APPLE__)
-        printf("%s: %016" PRIxPTR "\n", context, (uintptr_t) address);
-#endif
+	    unsigned char *p = (unsigned char *)&address;
+	    int i;
+		printf("%s: ", context);
+	    for (i = 0; i < sizeof address; i++)
+	    {
+	        printf("%02x ", p[i]);
+	    }
+	    putchar('\n');
     }
 }
 
@@ -369,12 +374,22 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
         }
         if (logLevel <= DEBUG)
         {
-#if defined(__APPLE__)
-            nuodb_handle * parent = handle->parent_handle;
-            printf("[REFERENCE COUNT][%s] (%s @ %016" PRIxPTR "): %d (%s @ %016" PRIxPTR "): %d\n",
-                context, demangle(typeid(*handle).name()), (uintptr_t) handle,
-                    handle->atomic, demangle(typeid(*parent).name()), (uintptr_t) parent, parent_count);
-#endif
+            nuodb_handle  * parent = handle->parent_handle;
+		    unsigned char *p = (unsigned char *)&handle;
+		    unsigned char *q = (unsigned char *)&parent;
+		    int i;
+			printf("[REFERENCE COUNT][%s] (%s @ ", context, demangle(typeid(*handle).name()));
+		    for (i = 0; i < sizeof handle; i++)
+		    {
+		        printf("%02x ", p[i]);
+		    }
+		    printf("): %d (%s @ ", handle->atomic, demangle(typeid(*parent).name()));
+		    for (i = 0; i < sizeof parent; i++)
+		    {
+		        printf("%02x ", q[i]);
+		    }
+		    printf("): %d", parent_count);
+		    putchar('\n');
         }
     }
 }
@@ -983,29 +998,17 @@ nuodb_result_each(VALUE self)
         VALUE rows = rb_iv_get(self, "@rows");
         if (NIL_P(rows))
         {
-            while (handle->pointer->next())
-            {
-                VALUE array = rb_ary_new();
-
-                NuoDB::ResultSetMetaData * metadata = handle->pointer->getMetaData();
-                int32_t column_count = metadata->getColumnCount();
-                for (int32_t column = 1; column < column_count + 1; column++)
-                {
-                    SqlType type = (SqlType) metadata->getColumnType(column);
-                    rb_ary_push(array, nuodb_get_rb_value(column, type, handle->pointer));
-                }
-
-                rb_yield(array);
-            }
+			rows = nuodb_result_rows(self);
         }
-        else
+        for (int i = 0; i < RARRAY_LEN(rows); i++)
         {
-            for (int i = 0; i < RARRAY_LEN(rows); i++)
-            {
-                rb_yield(rb_ary_entry(rows, i));
-            }
+            rb_yield(rb_ary_entry(rows, i));
         }
         return self;
+    }
+    else
+    {
+        rb_raise(rb_eArgError, "invalid state: result handle nil");
     }
     return Qnil;
 }
