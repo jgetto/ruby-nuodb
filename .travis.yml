@@ -10,6 +10,7 @@ notifications:
   recipients:
     - buck.robert.j@gmail.com
     - rbuck@nuodb.com
+    - lbayas@nuodb.com
 
 before_install:
   - wget http://www.nuodb.com/latest/nuodb-1.0.2.linux.x64.deb --output-document=/var/tmp/nuodb.deb
