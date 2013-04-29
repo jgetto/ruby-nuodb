@@ -1,3 +1,6 @@
+=== 1.0.2
+- Fixed each iteration bug
+
 === 1.0.1
 
 - Fixed rpath entries on linux and solaris so that customers don't need to
