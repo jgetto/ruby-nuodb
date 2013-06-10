@@ -39,3 +39,5 @@ Note: At this time the Ruby/NuoDB Interface does not support Windows.
 
 See [Contribution](CONTRIBUTION.md) for information about contributing to
 the Ruby ActiveRecord NuoDB Adapter.
+
+[![githalytics.com alpha](https://cruel-carlota.pagodabox.com/9acbb24d79760ffb071e5e653305e21e "githalytics.com")](http://githalytics.com/nuodb/ruby-nuodb)
