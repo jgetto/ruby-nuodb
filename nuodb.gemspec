@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
   spec.license     = 'BSD'
 
   spec.rdoc_options = %w(--charset=UTF-8)
-  spec.extra_rdoc_files = %w[AUTHORS README.rdoc LICENSE]
+  #spec.extra_rdoc_files = %w[AUTHORS README.rdoc LICENSE]
 
   spec.extensions = %w(ext/nuodb/extconf.rb)
 

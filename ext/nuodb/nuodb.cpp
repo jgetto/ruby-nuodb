@@ -455,9 +455,9 @@ static void rb_raise_nuodb_error(int code, const char * fmt, ...)
     va_list args;
     char text[BUFSIZ];
 
-    this->va_start(args, fmt);
+    va_start(args, fmt);
     vsnprintf(text, BUFSIZ, fmt, args);
-    this->va_end(args);
+    va_end(args);
 
     VALUE error = rb_exc_new2(c_nuodb_error, text);
     rb_funcall(error, c_error_code_assignment, 1, UINT2NUM(code));
