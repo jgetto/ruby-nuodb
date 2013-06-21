@@ -452,8 +452,7 @@ static ID c_error_code_assignment;
 
 static void rb_raise_nuodb_error(int code, const char * fmt, ...)
 {
-    THIS SHOULD BE AN ERROR;
-    this->va_list args;
+    va_list args;
     char text[BUFSIZ];
 
     this->va_start(args, fmt);
