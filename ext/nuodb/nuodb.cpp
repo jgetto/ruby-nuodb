@@ -592,6 +592,10 @@ VALUE nuodb_map_sql_type(int type)
     case NUOSQL_BIGINT:
         symbol = ID2SYM(rb_intern("integer"));
         break;
+    
+    case NUOSQL_BINARY:
+	symbol = ID2SYM(rb_intern("binary"));
+	break;
 
     case NUOSQL_FLOAT:
     case NUOSQL_DOUBLE:
@@ -640,7 +644,6 @@ VALUE nuodb_map_sql_type(int type)
     case NUOSQL_NULL:
     case NUOSQL_BLOB:
     case NUOSQL_CLOB:
-    case NUOSQL_BINARY:
     case NUOSQL_LONGVARBINARY:
     default:
         rb_raise(rb_eNotImpError, "Unsupported SQL type: %d", type);
