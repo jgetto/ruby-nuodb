@@ -765,6 +765,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             }
             break;
         }
+	case NUOSQL_BINARY:
         case NUOSQL_CHAR:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
@@ -813,7 +814,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         }
         default:
         {
-            rb_raise(rb_eTypeError, "not a supported ruby type: %d", type);
+            rb_raise(rb_eTypeError, "CHANGES WORKING: %d", type);
             break;
         }
     }
