@@ -633,9 +633,9 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("numeric"));
         break;
 
-//    case NUOSQL_BLOB:
-//        symbol = ID2SYM(rb_intern("blob"));
-//        break;
+    case NUOSQL_BLOB:
+        symbol = ID2SYM(rb_intern("blob"));
+        break;
 //
 //    case NUOSQL_CLOB:
 //        symbol = ID2SYM(rb_intern("clob"));
@@ -751,7 +751,6 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         case NUOSQL_SMALLINT:
         case NUOSQL_INTEGER:
         {
-	    printf("HERE: %d", type);
             int field = results->getInt(column);
             if (!results->wasNull())
             {
