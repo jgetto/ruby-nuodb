@@ -580,6 +580,8 @@ VALUE nuodb_result_finish(VALUE self)
 //    return Qnil;
 }
 
+SqlType BINARYSTRING;
+
 static
 VALUE nuodb_map_sql_type(int type)
 {
@@ -714,8 +716,6 @@ nuodb_get_rb_timezone_offset()
     VALUE offset = rb_funcall(time, rb_intern("utc_offset"), 0);
     return NUM2LONG(offset);
 }
-
-SqlType BINARYSTRING;
 
 static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
