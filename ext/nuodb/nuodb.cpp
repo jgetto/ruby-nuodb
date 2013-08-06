@@ -379,7 +379,7 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
 		    unsigned char *p = (unsigned char *)&handle;
 		    unsigned char *q = (unsigned char *)&parent;
 		    int i;
-			printf("[REFERENCE COUNT][%s] (%s @ ", context, demangle(typeid(*handle).name()));
+		    printf("[REFERENCE COUNT][%s] (%s @ ", context, demangle(typeid(*handle).name()));
 		    for (i = 0; i < sizeof handle; i++)
 		    {
 		        printf("%02x ", p[i]);
@@ -583,7 +583,6 @@ VALUE nuodb_result_finish(VALUE self)
 static
 VALUE nuodb_map_sql_type(int type)
 {
-    SqlType BINARYSTRING;
     VALUE symbol = Qnil;
     switch(type)
     {
@@ -720,7 +719,6 @@ static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
     VALUE value = Qnil;
-    SqlType BINARYSTRING;
     switch (type)
     {
         case NUOSQL_BIT:
@@ -775,9 +773,6 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         }
 	case NUOSQL_BINARY:
 	case NUOSQL_BINARYSTRING:
-	{
-	    value = NUOSQL_BINARY;
-	}
         case NUOSQL_CHAR:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
