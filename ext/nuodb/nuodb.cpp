@@ -768,7 +768,6 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             break;
         }
 	case NUOSQL_BINARY:
-	case NUOSQL_BINARYSTRING:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
         {
