@@ -633,9 +633,9 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("numeric"));
         break;
 
-    case NUOSQL_BLOB:
-        symbol = ID2SYM(rb_intern("blob"));
-        break;
+//    case NUOSQL_BLOB:
+//        symbol = ID2SYM(rb_intern("blob"));
+//        break;
 //
 //    case NUOSQL_CLOB:
 //        symbol = ID2SYM(rb_intern("clob"));
