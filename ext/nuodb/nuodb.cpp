@@ -580,11 +580,10 @@ VALUE nuodb_result_finish(VALUE self)
 //    return Qnil;
 }
 
-SqlType BINARYSTRING;
-
 static
 VALUE nuodb_map_sql_type(int type)
 {
+    SqlType BINARYSTRING;
     VALUE symbol = Qnil;
     switch(type)
     {
@@ -721,7 +720,7 @@ static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
     VALUE value = Qnil;
-
+    SqlType BINARYSTRING;
     switch (type)
     {
         case NUOSQL_BIT:
