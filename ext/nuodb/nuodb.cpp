@@ -768,10 +768,6 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             break;
         }
 	case NUOSQL_BINARY:
-	case NUOSQL_BINARYSTRING:
-	{
-		value = INT2NUM(4000);
-	}
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
         {
