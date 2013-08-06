@@ -715,6 +715,8 @@ nuodb_get_rb_timezone_offset()
     return NUM2LONG(offset);
 }
 
+SqlType BINARYSTRING;
+
 static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
