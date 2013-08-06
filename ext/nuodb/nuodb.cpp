@@ -751,6 +751,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         case NUOSQL_SMALLINT:
         case NUOSQL_INTEGER:
         {
+	    printf("HERE: %d", type);
             int field = results->getInt(column);
             if (!results->wasNull())
             {
