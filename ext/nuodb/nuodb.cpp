@@ -593,9 +593,8 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("integer"));
         break;
 
-    case 2004:
-	printf("Well it prints...\n");
-	break;
+    //case 2004:
+	//break;
     
     case NUOSQL_BINARY:
 	symbol = ID2SYM(rb_intern("binary"));
@@ -650,6 +649,7 @@ VALUE nuodb_map_sql_type(int type)
     case NUOSQL_CLOB:
     case NUOSQL_LONGVARBINARY:
     default:
+	printf("Type is: %d", type);
         rb_raise(rb_eNotImpError, "Unsupported SQL type: %d", type);
     }
     return symbol;
