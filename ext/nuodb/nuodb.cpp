@@ -594,7 +594,7 @@ VALUE nuodb_map_sql_type(int type)
         break;
 
     case 2004:
-	symbol = IDSYM(rb_intern("binary"));
+	printf("Well it prints...\n");
 	break;
     
     case NUOSQL_BINARY:
@@ -774,7 +774,6 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 
 	case 2004:
         {
-            printf("SUCCESS!\n");
             value = INT2NUM(-2);
             break;
         }
