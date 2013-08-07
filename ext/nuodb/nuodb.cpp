@@ -593,10 +593,6 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("integer"));
         break;
 
-    case 2004:
-	symbol = ID2SYM(rb_intern("binary"));
-	break;
-    
     case NUOSQL_BINARY:
 	symbol = ID2SYM(rb_intern("binary"));
 	break;
@@ -637,9 +633,9 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("numeric"));
         break;
 
-//    case NUOSQL_BLOB:
-//        symbol = ID2SYM(rb_intern("blob"));
-//        break;
+    case NUOSQL_BLOB:
+        symbol = ID2SYM(rb_intern("blob"));
+        break;
 //
 //    case NUOSQL_CLOB:
 //        symbol = ID2SYM(rb_intern("clob"));
@@ -772,13 +768,13 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             break;
         }
 
+	//case 2004:
+        //{
+        //    value = INT2NUM(-2);
+        //    break;
+        //}
+
 	case 2004:
-        {
-            value = INT2NUM(-2);
-            break;
-        }
-
-
 	case NUOSQL_BINARY:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
