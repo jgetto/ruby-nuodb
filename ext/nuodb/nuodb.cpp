@@ -714,7 +714,6 @@ nuodb_get_rb_timezone_offset()
 static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
-    type = -2;
     VALUE value = Qnil;
     switch (type)
     {
@@ -772,7 +771,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 	case 2004:
         {
             printf("SUCCESS!\n");
-            //type = -2;
+            type = INT2NUM(-2);
             break;
         }
 
