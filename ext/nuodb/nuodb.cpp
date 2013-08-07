@@ -592,6 +592,10 @@ VALUE nuodb_map_sql_type(int type)
     case NUOSQL_BIGINT:
         symbol = ID2SYM(rb_intern("integer"));
         break;
+
+    case 2004:
+	symbol = IDSYM(rb_intern("binary"));
+	break;
     
     case NUOSQL_BINARY:
 	symbol = ID2SYM(rb_intern("binary"));
