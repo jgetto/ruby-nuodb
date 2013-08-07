@@ -772,7 +772,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 	case 2004:
         {
             printf("SUCCESS!\n");
-            type = -2;
+            //type = -2;
             break;
         }
 
