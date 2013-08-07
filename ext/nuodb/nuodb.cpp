@@ -714,6 +714,7 @@ nuodb_get_rb_timezone_offset()
 static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
+    type = -2;
     VALUE value = Qnil;
     switch (type)
     {
