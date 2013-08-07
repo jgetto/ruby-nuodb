@@ -813,13 +813,14 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             }
             break;
         }
+	case 2004:
+	{
+	    printf("SUCCESS!");
+	    break;
+	}
         default:
         {
-	    int field = results->getInt(column);
-	    printf("Type: %d", type);
-            //rb_raise(rb_eTypeError, "CHANGES WORKING: %d", type);
-	    value = INT2NUM(field);
-	    printf("HERE VAL IS: %d", value);
+            rb_raise(rb_eTypeError, "CHANGES WORKING: %d", type);
             break;
         }
     }
