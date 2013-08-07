@@ -646,7 +646,7 @@ VALUE nuodb_map_sql_type(int type)
 //        break;
 
     case NUOSQL_NULL:
-    case NUOSQL_BLOB:
+    //case NUOSQL_BLOB:
     case NUOSQL_CLOB:
     case NUOSQL_LONGVARBINARY:
     default:
