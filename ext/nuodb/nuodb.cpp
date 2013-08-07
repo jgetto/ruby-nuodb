@@ -767,6 +767,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             }
             break;
         }
+	jump:
 	case NUOSQL_BINARY:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
@@ -815,7 +816,9 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         }
 	case 2004:
 	{
-	    printf("SUCCESS!");
+	    printf("SUCCESS!\n");
+	    type = -2;
+	    goto jump;
 	    break;
 	}
         default:
