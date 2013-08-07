@@ -636,7 +636,6 @@ VALUE nuodb_map_sql_type(int type)
     case NUOSQL_BLOB:
         symbol = ID2SYM(rb_intern("blob"));
         break;
-//
 //    case NUOSQL_CLOB:
 //        symbol = ID2SYM(rb_intern("clob"));
 //        break;
@@ -768,13 +767,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             break;
         }
 
-	//case 2004:
-        //{
-        //    value = INT2NUM(-2);
-        //    break;
-        //}
-
-	case 2004:
+	case BLOB:
 	case NUOSQL_BINARY:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
@@ -823,7 +816,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         }
         default:
         {
-            rb_raise(rb_eTypeError, "CHANGES WORKING: %d", type);
+            rb_raise(rb_eTypeError, "Not a supported ruby type: %d", type);
             break;
         }
     }
