@@ -36,6 +36,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <typeinfo>
+#include <stdarg.h>
 
 #define HAVE_CXA_DEMANGLE
 
@@ -378,7 +379,7 @@ static void track_ref_count(char const * context, nuodb_handle * handle)
 		    unsigned char *p = (unsigned char *)&handle;
 		    unsigned char *q = (unsigned char *)&parent;
 		    int i;
-			printf("[REFERENCE COUNT][%s] (%s @ ", context, demangle(typeid(*handle).name()));
+		    printf("[REFERENCE COUNT][%s] (%s @ ", context, demangle(typeid(*handle).name()));
 		    for (i = 0; i < sizeof handle; i++)
 		    {
 		        printf("%02x ", p[i]);
@@ -592,6 +593,10 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("integer"));
         break;
 
+    case NUOSQL_BINARY:
+	symbol = ID2SYM(rb_intern("binary"));
+	break;
+    
     case NUOSQL_FLOAT:
     case NUOSQL_DOUBLE:
         symbol = ID2SYM(rb_intern("float"));
@@ -628,18 +633,16 @@ VALUE nuodb_map_sql_type(int type)
         symbol = ID2SYM(rb_intern("numeric"));
         break;
 
-//    case NUOSQL_BLOB:
-//        symbol = ID2SYM(rb_intern("blob"));
-//        break;
-//
+    case NUOSQL_BLOB:
+        symbol = ID2SYM(rb_intern("blob"));
+        break;
 //    case NUOSQL_CLOB:
 //        symbol = ID2SYM(rb_intern("clob"));
 //        break;
 
     case NUOSQL_NULL:
-    case NUOSQL_BLOB:
+    //case NUOSQL_BLOB:
     case NUOSQL_CLOB:
-    case NUOSQL_BINARY:
     case NUOSQL_LONGVARBINARY:
     default:
         rb_raise(rb_eNotImpError, "Unsupported SQL type: %d", type);
@@ -711,7 +714,6 @@ static VALUE
 nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
 {
     VALUE value = Qnil;
-
     switch (type)
     {
         case NUOSQL_BIT:
@@ -764,7 +766,9 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
             }
             break;
         }
-        case NUOSQL_CHAR:
+
+	case NUOSQL_BLOB:
+	case NUOSQL_BINARY:
         case NUOSQL_VARCHAR:
         case NUOSQL_LONGVARCHAR:
         {
@@ -812,7 +816,7 @@ nuodb_get_rb_value(int column, SqlType type, ResultSet * results)
         }
         default:
         {
-            rb_raise(rb_eTypeError, "not a supported ruby type: %d", type);
+            rb_raise(rb_eTypeError, "Not a supported ruby type: %d", type);
             break;
         }
     }

@@ -1,0 +1,56 @@
+PATH
+  remote: .
+  specs:
+    nuodb (1.0.2)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    diff-lcs (1.1.3)
+    erubis (2.7.0)
+    haml (3.0.25)
+    hanna-nouveau (0.2.7)
+      haml (= 3.0.25)
+      rdoc (~> 3.1)
+    json (1.8.0)
+    multi_json (1.7.8)
+    optiflag (0.7)
+    rake (10.1.0)
+    rdoc (3.12.2)
+      json (~> 1.4)
+    rspec (2.11.0)
+      rspec-core (~> 2.11.0)
+      rspec-expectations (~> 2.11.0)
+      rspec-mocks (~> 2.11.0)
+    rspec-core (2.11.1)
+    rspec-expectations (2.11.3)
+      diff-lcs (~> 1.1.3)
+    rspec-mocks (2.11.3)
+    ruby-prof (0.13.0)
+    rubydoc (0.0.1)
+      optiflag (~> 0.7)
+    sdoc (0.3.20)
+      json (>= 1.1.3)
+      rdoc (~> 3.10)
+    simplecov (0.7.1)
+      multi_json (~> 1.0)
+      simplecov-html (~> 0.7.1)
+    simplecov-html (0.7.1)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  erubis (~> 2.7.0)
+  hanna-nouveau
+  nuodb!
+  rake
+  rdoc
+  rspec (~> 2.11.0)
+  rspec-core (~> 2.11.0)
+  rspec-expectations (~> 2.11.0)
+  rspec-mocks (~> 2.11.0)
+  ruby-prof
+  rubydoc
+  sdoc
+  simplecov
