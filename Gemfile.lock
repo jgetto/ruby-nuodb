@@ -44,7 +44,7 @@ DEPENDENCIES
   erubis (~> 2.7.0)
   hanna-nouveau
   nuodb!
-  rake
+  rake (~> 10.1.0)
   rdoc
   rspec (~> 2.11.0)
   rspec-core (~> 2.11.0)
